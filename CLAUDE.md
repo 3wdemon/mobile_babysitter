@@ -32,7 +32,7 @@ P2P baby monitor app: 2 смартфона, без облачной зависи
 
 ### Версии (зафиксировать в DMY-13)
 
-- Node: 20 LTS
+- Node: 22 LTS (Active LTS; зафиксировано в `.nvmrc`, `engines.node >= 22.11.0`). Node 20 — EOL, не используем.
 - React Native: latest stable (на момент init)
 - iOS deployment target: 14.0+
 - Android minSdkVersion: 26 (Android 8.0)
