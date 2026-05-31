@@ -26,6 +26,10 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
+test('renders without crashing', () => {
+  expect(() => render(<App />)).not.toThrow();
+});
+
 test('renders the "Mobile Babysitter" title', () => {
   render(<App />);
 
