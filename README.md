@@ -11,7 +11,7 @@ React Native **bare** (no Expo) + TypeScript. See `CLAUDE.md` for the full
 rationale (decision DMY-5).
 
 - React Native: 0.85.3
-- Node: 20 LTS (recommended)
+- Node: 22 LTS (pinned via `.nvmrc`; `engines.node >= 22.11.0`)
 - iOS deployment target: 14.0+
 - Android `minSdkVersion`: 26 (Android 8.0)
 
