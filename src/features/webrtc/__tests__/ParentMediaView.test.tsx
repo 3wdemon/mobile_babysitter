@@ -68,4 +68,29 @@ describe('ParentMediaView', () => {
       ]),
     );
   });
+
+  it('renders RTCView with the remote stream URL when video is live (DMY-17)', () => {
+    useAppStore.getState().setAudioOnlyEnabled(false);
+    render(<ParentMediaView remoteStreamUrl="rtc://remote-1" />);
+    const video = screen.getByTestId('parent-remote-video');
+    // The real RTCView (mocked) receives the remote stream id.
+    expect(video.props.streamURL).toBe('rtc://remote-1');
+    // No "connecting" placeholder hint when the live picture is up.
+    expect(screen.queryByText(/appears here once the connection/i)).toBeNull();
+  });
+
+  it('shows the placeholder (no RTCView) until a real remote stream arrives', () => {
+    useAppStore.getState().setAudioOnlyEnabled(false);
+    render(<ParentMediaView remoteStreamUrl={null} />);
+    // Honest placeholder, never a faked video surface.
+    expect(screen.queryByTestId('parent-remote-video')).toBeNull();
+    expect(screen.getByText(/appears here once the connection/i)).toBeTruthy();
+  });
+
+  it('does not render video in audio-only mode even if a stream URL is present', () => {
+    // audioOnlyEnabled defaults to true.
+    render(<ParentMediaView remoteStreamUrl="rtc://remote-1" />);
+    expect(screen.queryByTestId('parent-remote-video')).toBeNull();
+    expect(screen.getByTestId('parent-audio-only-placeholder')).toBeTruthy();
+  });
 });
