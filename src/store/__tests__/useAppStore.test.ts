@@ -68,6 +68,7 @@ describe('useAppStore', () => {
       alertSoundsEnabled: true,
       noiseThreshold: 0.6,
       biometricLockEnabled: false,
+      isPremium: false,
     });
     expect(state.connectionStatus).toBe('idle');
     expect(state.pairedSessionId).toBeNull();
@@ -188,6 +189,7 @@ describe('useAppStore', () => {
         Record<string, unknown>;
 
       expect(Object.keys(persisted).sort()).toEqual([
+        'freeTierUsage',
         'onboardingCompleted',
         'role',
         'settings',
@@ -224,6 +226,7 @@ describe('useAppStore', () => {
         alertSoundsEnabled: true,
         noiseThreshold: 0.6,
         biometricLockEnabled: false,
+        isPremium: false,
       });
       expect(restored.connectionStatus).toBe('idle');
     });
@@ -245,6 +248,7 @@ describe('useAppStore', () => {
         alertSoundsEnabled: true,
         noiseThreshold: 0.6,
         biometricLockEnabled: false,
+        isPremium: false,
       });
     });
 
@@ -280,7 +284,10 @@ describe('useAppStore', () => {
           alertSoundsEnabled: true,
           noiseThreshold: 0.6,
           biometricLockEnabled: false,
+          isPremium: false,
         },
+        // reset() returns the counter to the empty default (no day stamped).
+        freeTierUsage: { usedMs: 0, dateKey: null },
       });
 
       // And a restart after reset rehydrates to defaults, not stale values.
@@ -361,6 +368,114 @@ describe('useAppStore', () => {
         useAppStore.getState().setRole('parent');
       });
       expect(roleRenders).toBe(baseline + 1);
+    });
+  });
+
+  describe('free-tier monetization (DMY-11)', () => {
+    it('defaults to free (not premium) with an empty usage counter', () => {
+      const state = useAppStore.getState();
+      expect(state.settings.isPremium).toBe(false);
+      expect(state.freeTierUsage).toEqual({ usedMs: 0, dateKey: null });
+    });
+
+    it('setPremium flips the placeholder entitlement flag', () => {
+      act(() => useAppStore.getState().setPremium(true));
+      expect(useAppStore.getState().settings.isPremium).toBe(true);
+      act(() => useAppStore.getState().setPremium(false));
+      expect(useAppStore.getState().settings.isPremium).toBe(false);
+    });
+
+    it('addFreeTierUsage accumulates and stamps today’s local date-key', () => {
+      act(() => {
+        useAppStore.getState().addFreeTierUsage(60_000);
+        useAppStore.getState().addFreeTierUsage(30_000);
+      });
+      const usage = useAppStore.getState().freeTierUsage;
+      expect(usage.usedMs).toBe(90_000);
+      expect(usage.dateKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('addFreeTierUsage ignores non-positive / non-finite deltas', () => {
+      act(() => {
+        useAppStore.getState().addFreeTierUsage(1000);
+        useAppStore.getState().addFreeTierUsage(-5000);
+        useAppStore.getState().addFreeTierUsage(NaN);
+        useAppStore.getState().addFreeTierUsage(0);
+      });
+      expect(useAppStore.getState().freeTierUsage.usedMs).toBe(1000);
+    });
+
+    it('addFreeTierUsage is a no-op for premium users (no cap to track)', () => {
+      act(() => {
+        useAppStore.getState().setPremium(true);
+        useAppStore.getState().addFreeTierUsage(120_000);
+      });
+      expect(useAppStore.getState().freeTierUsage.usedMs).toBe(0);
+    });
+
+    it('caps the accumulated counter at one hour', () => {
+      act(() => {
+        useAppStore.getState().addFreeTierUsage(10 * 60 * 60 * 1000);
+      });
+      expect(useAppStore.getState().freeTierUsage.usedMs).toBe(60 * 60 * 1000);
+    });
+
+    it('resets a stale (previous-day) counter to zero on the next usage', () => {
+      // Seed a counter for a clearly-past day directly via the store mutator.
+      act(() => useAppStore.getState().addFreeTierUsage(45 * 60 * 1000));
+      // Force the stored dateKey to an old day to simulate the day having rolled.
+      useAppStore.setState(s => ({
+        freeTierUsage: { usedMs: s.freeTierUsage.usedMs, dateKey: '2000-01-01' },
+      }));
+
+      act(() => useAppStore.getState().addFreeTierUsage(60_000));
+      const usage = useAppStore.getState().freeTierUsage;
+      expect(usage.usedMs).toBe(60_000); // previous day's 45 min did not carry
+      expect(usage.dateKey).not.toBe('2000-01-01');
+    });
+
+    it('resetFreeTierUsage zeroes the counter and stamps today', () => {
+      act(() => {
+        useAppStore.getState().addFreeTierUsage(120_000);
+        useAppStore.getState().resetFreeTierUsage();
+      });
+      const usage = useAppStore.getState().freeTierUsage;
+      expect(usage.usedMs).toBe(0);
+      expect(usage.dateKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('persists usage across a simulated restart (same-day cap survives)', () => {
+      act(() => useAppStore.getState().addFreeTierUsage(40 * 60 * 1000));
+      const restored = restartAndGetState();
+      expect(restored.freeTierUsage.usedMs).toBe(40 * 60 * 1000);
+    });
+
+    it('backfills new fields when rehydrating a legacy blob (DMY-43 persist-gap)', () => {
+      // A blob written before isPremium / freeTierUsage existed: settings has
+      // the old shape and there is no freeTierUsage key at all.
+      seedPersistedRaw(
+        JSON.stringify({
+          state: {
+            role: 'parent',
+            onboardingCompleted: true,
+            settings: {
+              theme: 'dark',
+              alertSoundsEnabled: true,
+              noiseThreshold: 0.6,
+              biometricLockEnabled: false,
+            },
+          },
+          version: 0,
+        }),
+      );
+
+      const restored = restartAndGetState();
+      // Old fields preserved...
+      expect(restored.role).toBe('parent');
+      expect(restored.settings.theme).toBe('dark');
+      // ...and new fields backfilled to safe defaults (no undefined holes).
+      expect(restored.settings.isPremium).toBe(false);
+      expect(restored.freeTierUsage).toEqual({ usedMs: 0, dateKey: null });
     });
   });
 });
