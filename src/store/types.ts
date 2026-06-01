@@ -28,9 +28,22 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 
 /**
  * Ephemeral connection status. Runtime-only; not persisted.
+ *
+ *  - `idle`         — nothing in progress.
+ *  - `paired`       — the parent-unit has scanned and validated a baby-unit QR
+ *    and recorded its `sessionId`, but the real WebRTC signalling handshake has
+ *    NOT happened yet. This is an HONEST intermediate state: pairing succeeded,
+ *    the media connection does not exist. The signalling exchange (offer/answer,
+ *    ICE) lands in DMY-16/18 and will drive the status onward to
+ *    `connecting` -> `connected`. We deliberately do NOT fake `connected` on a
+ *    successful scan. (DMY-14)
+ *  - `connecting`   — signalling/ICE in progress (DMY-16/18).
+ *  - `connected`    — live P2P media session.
+ *  - `disconnected` — a previously-established session dropped.
  */
 export type ConnectionStatus =
   | 'idle'
+  | 'paired'
   | 'connecting'
   | 'connected'
   | 'disconnected';
@@ -60,6 +73,13 @@ export interface PersistedState {
 export interface EphemeralState {
   /** Current P2P connection status. Reset on every launch. */
   connectionStatus: ConnectionStatus;
+  /**
+   * The `sessionId` of the baby-unit this device paired with after scanning its
+   * QR (DMY-14), or `null` when not paired. Ephemeral and NOT persisted: a
+   * pairing session must not outlive the app process (privacy — the id is a
+   * single-use, per-session value). Carries no personal data.
+   */
+  pairedSessionId: string | null;
 }
 
 /**
@@ -76,6 +96,17 @@ export interface AppActions {
   toggleAlertSounds: () => void;
   /** Update the ephemeral connection status. */
   setConnectionStatus: (status: ConnectionStatus) => void;
+  /**
+   * Record a successful QR pairing (DMY-14): store the baby-unit `sessionId`
+   * and move `connectionStatus` to `paired`. Does NOT start signalling — that
+   * is DMY-16/18.
+   */
+  setPaired: (sessionId: string) => void;
+  /**
+   * Clear the pairing: forget the session id and return `connectionStatus` to
+   * `idle`. Used to scan again / leave the paired screen.
+   */
+  clearPairing: () => void;
   /** Reset all state (persisted + ephemeral) back to defaults. */
   reset: () => void;
 }

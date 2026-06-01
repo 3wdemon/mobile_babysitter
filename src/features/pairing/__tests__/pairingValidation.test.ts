@@ -1,0 +1,165 @@
+/**
+ * Unit tests for the DMY-14 receive-side validation hardening of the pairing
+ * service: staleness ({@link isPairingPayloadFresh}), defensive `connection`
+ * validation in {@link parsePairingPayload}, and the combined
+ * {@link validateScannedPayload} entry point.
+ *
+ * These complement (do not replace) the DMY-6 parse/round-trip tests in
+ * pairingService.test.ts.
+ */
+import {
+  createPairingPayload,
+  isPairingPayloadFresh,
+  parsePairingPayload,
+  serializePairingPayload,
+  validateScannedPayload,
+} from '../pairingService';
+import {
+  PAIRING_PAYLOAD_TTL_MS,
+  PAIRING_PAYLOAD_VERSION,
+  PAIRING_TYPE,
+} from '../types';
+
+const NOW = 1_700_000_000_000;
+
+function freshQr(now: number = NOW): string {
+  return serializePairingPayload(createPairingPayload(undefined, now));
+}
+
+describe('isPairingPayloadFresh', () => {
+  it('accepts a payload generated just now', () => {
+    const payload = createPairingPayload(undefined, NOW);
+    expect(isPairingPayloadFresh(payload, NOW)).toBe(true);
+  });
+
+  it('accepts a payload right at the TTL boundary', () => {
+    const payload = createPairingPayload(undefined, NOW - PAIRING_PAYLOAD_TTL_MS);
+    expect(isPairingPayloadFresh(payload, NOW)).toBe(true);
+  });
+
+  it('rejects a payload older than the TTL', () => {
+    const payload = createPairingPayload(
+      undefined,
+      NOW - PAIRING_PAYLOAD_TTL_MS - 1,
+    );
+    expect(isPairingPayloadFresh(payload, NOW)).toBe(false);
+  });
+
+  it('rejects a payload from the far future (beyond clock-skew grace)', () => {
+    const payload = createPairingPayload(undefined, NOW + 5 * 60 * 1000);
+    expect(isPairingPayloadFresh(payload, NOW)).toBe(false);
+  });
+
+  it('tolerates a small future skew within the grace window', () => {
+    const payload = createPairingPayload(undefined, NOW + 10 * 1000);
+    expect(isPairingPayloadFresh(payload, NOW)).toBe(true);
+  });
+
+  it('honours a custom maxAgeMs', () => {
+    const payload = createPairingPayload(undefined, NOW - 2000);
+    expect(isPairingPayloadFresh(payload, NOW, 1000)).toBe(false);
+    expect(isPairingPayloadFresh(payload, NOW, 3000)).toBe(true);
+  });
+});
+
+describe('parsePairingPayload — defensive connection validation', () => {
+  function withConnection(connection: unknown): string {
+    return JSON.stringify({
+      type: PAIRING_TYPE,
+      version: PAIRING_PAYLOAD_VERSION,
+      sessionId: createPairingPayload(undefined, NOW).sessionId,
+      createdAt: NOW,
+      connection,
+    });
+  }
+
+  it('keeps a well-formed connection block', () => {
+    const parsed = parsePairingPayload(
+      withConnection({
+        sdp: 'v=0 offer',
+        iceCandidates: ['candidate:a', 'candidate:b'],
+        discovery: { serviceName: '_mbs._tcp.local', port: 5353 },
+      }),
+    );
+    expect(parsed?.connection).toEqual({
+      sdp: 'v=0 offer',
+      iceCandidates: ['candidate:a', 'candidate:b'],
+      discovery: { serviceName: '_mbs._tcp.local', port: 5353 },
+    });
+  });
+
+  it('drops unrecognised fields inside connection', () => {
+    const parsed = parsePairingPayload(
+      withConnection({ sdp: 'v=0', evil: 'rm -rf', nested: { x: 1 } }),
+    );
+    expect(parsed?.connection).toEqual({ sdp: 'v=0' });
+  });
+
+  it('treats an empty connection object as no connection', () => {
+    const parsed = parsePairingPayload(withConnection({}));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.connection).toBeUndefined();
+  });
+
+  it('rejects the whole payload when sdp is mis-typed', () => {
+    expect(parsePairingPayload(withConnection({ sdp: 123 }))).toBeNull();
+  });
+
+  it('rejects the whole payload when iceCandidates is not a string[]', () => {
+    expect(
+      parsePairingPayload(withConnection({ iceCandidates: [1, 2, 3] })),
+    ).toBeNull();
+    expect(
+      parsePairingPayload(withConnection({ iceCandidates: 'candidate' })),
+    ).toBeNull();
+  });
+
+  it('rejects the whole payload when discovery is malformed', () => {
+    expect(
+      parsePairingPayload(withConnection({ discovery: 'nope' })),
+    ).toBeNull();
+    expect(
+      parsePairingPayload(withConnection({ discovery: { port: 'abc' } })),
+    ).toBeNull();
+  });
+
+  it('rejects a connection that is not an object', () => {
+    expect(parsePairingPayload(withConnection('a string'))).toBeNull();
+    expect(parsePairingPayload(withConnection([1, 2]))).toBeNull();
+  });
+});
+
+describe('validateScannedPayload', () => {
+  it('accepts a fresh, well-formed QR', () => {
+    const result = validateScannedPayload(freshQr(NOW), NOW);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.type).toBe(PAIRING_TYPE);
+    }
+  });
+
+  it('rejects a corrupt/foreign QR with reason "invalid"', () => {
+    expect(validateScannedPayload('{not json', NOW)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(
+      validateScannedPayload(JSON.stringify({ type: 'other' }), NOW),
+    ).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('rejects a stale (but well-formed) QR with reason "stale"', () => {
+    const old = freshQr(NOW - PAIRING_PAYLOAD_TTL_MS - 1000);
+    expect(validateScannedPayload(old, NOW)).toEqual({
+      ok: false,
+      reason: 'stale',
+    });
+  });
+
+  it('never throws on arbitrary garbage input', () => {
+    for (const junk of ['', '\x00', '][', 'undefined', '{"a":']) {
+      expect(() => validateScannedPayload(junk, NOW)).not.toThrow();
+      expect(validateScannedPayload(junk, NOW).ok).toBe(false);
+    }
+  });
+});

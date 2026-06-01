@@ -106,3 +106,40 @@ export interface PairingPayload {
  * with this `type` is not one of our pairing QRs and must be rejected.
  */
 export const PAIRING_TYPE = 'mbs-pair' as const;
+
+/**
+ * Default freshness window for a scanned pairing QR, in milliseconds (DMY-14).
+ *
+ * Five minutes. A pairing QR is meant to be scanned *interactively*, in the
+ * same session, while both phones are in front of the user. Five minutes is
+ * long enough to walk the parent phone into the nursery and line up the
+ * camera, but short enough that an OLD QR — a screenshot from a previous
+ * session, or a code left on a baby-unit screen and re-scanned hours later —
+ * is rejected rather than silently re-used. Because `sessionId` is single-use
+ * and ephemeral, accepting a stale QR would at best produce a dead session and
+ * at worst let someone pair against a session the baby-unit has moved on from.
+ *
+ * Tunable per call via {@link isPairingPayloadFresh} / the scanner's
+ * `maxAgeMs`; this is only the default.
+ */
+export const PAIRING_PAYLOAD_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Reasons a scanned QR is rejected by the parent-unit scanner (DMY-14).
+ *
+ * Distinct from "no payload at all" so the UI can show actionable copy:
+ *  - `invalid`  — not one of our QRs (wrong/foreign code, corrupt JSON, wrong
+ *    type/version, bad sessionId/createdAt, or a malformed `connection` block).
+ *    {@link parsePairingPayload} returned `null`.
+ *  - `stale`    — a valid payload, but generated outside the freshness window
+ *    (an old screenshot / re-scanned code). See {@link PAIRING_PAYLOAD_TTL_MS}.
+ */
+export type PairingScanRejectReason = 'invalid' | 'stale';
+
+/**
+ * Outcome of validating a single scanned QR string. Never an exception — the
+ * scanner must keep running through bad frames.
+ */
+export type PairingScanResult =
+  | { readonly ok: true; readonly payload: PairingPayload }
+  | { readonly ok: false; readonly reason: PairingScanRejectReason };

@@ -62,3 +62,9 @@ jest.mock('react-native-permissions');
 // __mocks__/react-native-qrcode-svg.tsx so the baby-unit pairing screen mounts
 // and exposes the encoded value for assertions.
 jest.mock('react-native-qrcode-svg');
+
+// react-native-vision-camera (DMY-14) is a native Nitro module (camera session,
+// preview, QR object scanner) with no JS fallback under Jest. Use the manual
+// mock in __mocks__/react-native-vision-camera.tsx so the parent pairing screen
+// mounts and tests can drive scans via its `__emitScan` helper.
+jest.mock('react-native-vision-camera');

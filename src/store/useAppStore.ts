@@ -38,6 +38,7 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
  */
 const INITIAL_EPHEMERAL_STATE: EphemeralState = {
   connectionStatus: 'idle',
+  pairedSessionId: null,
 };
 
 /**
@@ -64,6 +65,13 @@ export const useAppStore = create<AppState>()(
           },
         })),
       setConnectionStatus: connectionStatus => set({ connectionStatus }),
+      // Pairing succeeded (QR scanned + validated). We record the session id and
+      // mark `paired`, but the WebRTC handshake is NOT started here — signalling
+      // is DMY-16/18. Deliberately not faking `connected`.
+      setPaired: sessionId =>
+        set({ pairedSessionId: sessionId, connectionStatus: 'paired' }),
+      clearPairing: () =>
+        set({ pairedSessionId: null, connectionStatus: 'idle' }),
       reset: () =>
         set({ ...INITIAL_PERSISTED_STATE, ...INITIAL_EPHEMERAL_STATE }),
     }),
