@@ -1,13 +1,16 @@
 name: CI
 
-# Triggers: push to any branch and PRs targeting main.
+# Triggers: push to the default branch (post-merge), plus PRs targeting main.
+# Feature branches are covered via the pull_request event once a PR is open,
+# so we do NOT run on every branch push — that would double-run CI for any
+# branch with an open PR (push + pull_request) and waste runner minutes.
 # Red CI (except the android-build job, which is continue-on-error) should
 # block merges. Branch protection / required status checks must be enabled by
 # a human in repo Settings > Branches (outside agent access) — see DMY-15 PR.
 on:
   push:
     branches:
-      - '**'
+      - main
   pull_request:
     branches:
       - main
