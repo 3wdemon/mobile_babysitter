@@ -66,6 +66,7 @@ describe('useAppStore', () => {
     expect(state.settings).toEqual({
       theme: 'system',
       alertSoundsEnabled: true,
+      biometricLockEnabled: false,
     });
     expect(state.connectionStatus).toBe('idle');
     expect(state.pairedSessionId).toBeNull();
@@ -212,6 +213,7 @@ describe('useAppStore', () => {
       expect(restored.settings).toEqual({
         theme: 'system',
         alertSoundsEnabled: true,
+        biometricLockEnabled: false,
       });
       expect(restored.connectionStatus).toBe('idle');
     });
@@ -231,6 +233,7 @@ describe('useAppStore', () => {
       expect(restored?.settings).toEqual({
         theme: 'system',
         alertSoundsEnabled: true,
+        biometricLockEnabled: false,
       });
     });
 
@@ -263,7 +266,11 @@ describe('useAppStore', () => {
       expect(blob?.state).toEqual({
         role: null,
         onboardingCompleted: false,
-        settings: { theme: 'system', alertSoundsEnabled: true },
+        settings: {
+          theme: 'system',
+          alertSoundsEnabled: true,
+          biometricLockEnabled: false,
+        },
       });
 
       // And a restart after reset rehydrates to defaults, not stale values.
