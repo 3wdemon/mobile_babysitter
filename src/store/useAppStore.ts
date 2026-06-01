@@ -43,6 +43,9 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
     biometricLockEnabled: false,
     // Free by default. PLACEHOLDER — no real purchase grants this yet (DMY-27).
     isPremium: false,
+    // On by default (DMY-12): dim-screen + sensors-off is the expected, safer,
+    // lower-power baby-unit posture per product-spec. User can opt out.
+    powerSaverEnabled: true,
   },
   // Free-tier daily usage starts empty; rolls over at local midnight. (DMY-11)
   freeTierUsage: { ...EMPTY_QUOTA },
@@ -92,6 +95,11 @@ export const useAppStore = create<AppState>()(
       setBiometricLockEnabled: enabled =>
         set(state => ({
           settings: { ...state.settings, biometricLockEnabled: enabled },
+        })),
+      // DMY-12: toggle the baby-unit power-saver posture.
+      setPowerSaverEnabled: enabled =>
+        set(state => ({
+          settings: { ...state.settings, powerSaverEnabled: enabled },
         })),
       // DMY-11: PLACEHOLDER premium flag. No StoreKit/purchase behind it yet
       // (DMY-27); flips only via this action so the quota wiring is testable.

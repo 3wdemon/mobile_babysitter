@@ -69,6 +69,7 @@ describe('useAppStore', () => {
       noiseThreshold: 0.6,
       biometricLockEnabled: false,
       isPremium: false,
+      powerSaverEnabled: true,
     });
     expect(state.connectionStatus).toBe('idle');
     expect(state.pairedSessionId).toBeNull();
@@ -227,6 +228,7 @@ describe('useAppStore', () => {
         noiseThreshold: 0.6,
         biometricLockEnabled: false,
         isPremium: false,
+        powerSaverEnabled: true,
       });
       expect(restored.connectionStatus).toBe('idle');
     });
@@ -249,6 +251,7 @@ describe('useAppStore', () => {
         noiseThreshold: 0.6,
         biometricLockEnabled: false,
         isPremium: false,
+        powerSaverEnabled: true,
       });
     });
 
@@ -285,6 +288,7 @@ describe('useAppStore', () => {
           noiseThreshold: 0.6,
           biometricLockEnabled: false,
           isPremium: false,
+          powerSaverEnabled: true,
         },
         // reset() returns the counter to the empty default (no day stamped).
         freeTierUsage: { usedMs: 0, dateKey: null },
@@ -344,6 +348,53 @@ describe('useAppStore', () => {
       });
       const restored = restartAndGetState();
       expect(restored.settings.noiseThreshold).toBe(0.42);
+    });
+  });
+
+  describe('power-saver (DMY-12)', () => {
+    it('defaults to enabled', () => {
+      expect(useAppStore.getState().settings.powerSaverEnabled).toBe(true);
+    });
+
+    it('setPowerSaverEnabled toggles the flag', () => {
+      act(() => useAppStore.getState().setPowerSaverEnabled(false));
+      expect(useAppStore.getState().settings.powerSaverEnabled).toBe(false);
+      act(() => useAppStore.getState().setPowerSaverEnabled(true));
+      expect(useAppStore.getState().settings.powerSaverEnabled).toBe(true);
+    });
+
+    it('persists the power-saver setting across a simulated restart', () => {
+      act(() => useAppStore.getState().setPowerSaverEnabled(false));
+      const restored = restartAndGetState();
+      expect(restored.settings.powerSaverEnabled).toBe(false);
+    });
+
+    it('backfills the default for an older blob without powerSaverEnabled', () => {
+      // Simulate a pre-DMY-12 persisted shape: settings present but missing the
+      // new flag. The defensive merge must backfill it to the default (true)
+      // rather than leaving `undefined`.
+      seedPersistedRaw(
+        JSON.stringify({
+          state: {
+            role: 'baby',
+            onboardingCompleted: true,
+            settings: {
+              theme: 'dark',
+              alertSoundsEnabled: true,
+              noiseThreshold: 0.6,
+              biometricLockEnabled: false,
+              isPremium: false,
+            },
+            freeTierUsage: { usedMs: 0, dateKey: null },
+          },
+          version: 0,
+        }),
+      );
+      const restored = restartAndGetState();
+      expect(restored.settings.powerSaverEnabled).toBe(true);
+      // Saved fields are preserved.
+      expect(restored.settings.theme).toBe('dark');
+      expect(restored.role).toBe('baby');
     });
   });
 
@@ -425,7 +476,10 @@ describe('useAppStore', () => {
       act(() => useAppStore.getState().addFreeTierUsage(45 * 60 * 1000));
       // Force the stored dateKey to an old day to simulate the day having rolled.
       useAppStore.setState(s => ({
-        freeTierUsage: { usedMs: s.freeTierUsage.usedMs, dateKey: '2000-01-01' },
+        freeTierUsage: {
+          usedMs: s.freeTierUsage.usedMs,
+          dateKey: '2000-01-01',
+        },
       }));
 
       act(() => useAppStore.getState().addFreeTierUsage(60_000));

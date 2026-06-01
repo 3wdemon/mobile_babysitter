@@ -79,6 +79,17 @@ export interface Settings {
    * quota logic reads it so wiring is ready the moment DMY-27 lands.
    */
   isPremium: boolean;
+  /**
+   * Whether the baby-unit enters power-saver mode during an active monitoring
+   * session (DMY-12): dim the screen, keep it awake-but-dark, and disable
+   * non-essential sensors to cut battery/heat over long overnight sessions.
+   *
+   * Defaults to `true`: the product-spec lists dim-screen + sensor-off as the
+   * EXPECTED baby-unit posture, and a near-black nursery screen is the safer,
+   * lower-power default for an unattended monitor on a charger. The user can
+   * opt OUT via the baby-screen toggle (e.g. to use the screen as a nightlight).
+   */
+  powerSaverEnabled: boolean;
 }
 
 /**
@@ -150,6 +161,8 @@ export interface AppActions {
   setNoiseThreshold: (threshold: number) => void;
   /** Enable or disable the biometric/PIN lock on parent mode (DMY-10). */
   setBiometricLockEnabled: (enabled: boolean) => void;
+  /** Enable or disable baby-unit power-saver mode (DMY-12). */
+  setPowerSaverEnabled: (enabled: boolean) => void;
   /**
    * Set the premium entitlement flag (DMY-11). PLACEHOLDER only — there is no
    * real purchase behind it (StoreKit is DMY-27). Exposed so tests and a future
