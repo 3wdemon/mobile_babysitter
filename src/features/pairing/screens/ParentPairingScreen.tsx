@@ -33,6 +33,7 @@ import {
 
 import { useTheme } from '../../../hooks/useTheme';
 import { logger } from '../../../services/logger';
+import ParentMediaView from '../../webrtc/ParentMediaView';
 import { usePermissions } from '../../onboarding/usePermissions';
 import DiscoveredUnitsList from '../discovery/DiscoveredUnitsList';
 import { useDiscoveredUnits } from '../discovery/useDiscovery';
@@ -122,6 +123,12 @@ function ParentPairingScreen() {
   const discoveryStyle = useMemo(
     () => ({ marginTop: theme.spacing.lg }),
     [theme.spacing.lg],
+  );
+  // Spacing wrapper for the audio-only media view shown in the paired state
+  // (DMY-24). Precomputed so the JSX holds no literal style values.
+  const mediaViewStyle = useMemo(
+    () => ({ width: '100%' as const, marginBottom: theme.spacing.xl }),
+    [theme.spacing.xl],
   );
 
   // --- Permission gate -------------------------------------------------------
@@ -230,6 +237,10 @@ function ParentPairingScreen() {
           Connected to the baby unit. The live audio/video link starts in a
           moment.
         </Text>
+
+        <View style={mediaViewStyle}>
+          <ParentMediaView />
+        </View>
 
         <TouchableOpacity
           accessibilityRole="button"

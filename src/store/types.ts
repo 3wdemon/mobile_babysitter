@@ -90,6 +90,20 @@ export interface Settings {
    * opt OUT via the baby-screen toggle (e.g. to use the screen as a nightlight).
    */
   powerSaverEnabled: boolean;
+  /**
+   * Whether the parent-unit runs in audio-only low-power mode (DMY-24). When
+   * `true` the parent does NOT request the remote video track — only audio is
+   * received — to cut bandwidth, battery and data on long overnight sessions;
+   * the user can momentarily peek at video on demand (a tap), which does not
+   * change this persisted preference.
+   *
+   * Defaults to `true`: audio-only is the lower-power, lower-bandwidth baseline
+   * and matches how a traditional baby monitor is used (listen continuously,
+   * glance at the picture occasionally). The product-spec frames the parent
+   * side as battery- and data-conscious, so we default to the cheaper posture
+   * and let the user opt INTO always-on video.
+   */
+  audioOnlyEnabled: boolean;
 }
 
 /**
@@ -163,6 +177,8 @@ export interface AppActions {
   setBiometricLockEnabled: (enabled: boolean) => void;
   /** Enable or disable baby-unit power-saver mode (DMY-12). */
   setPowerSaverEnabled: (enabled: boolean) => void;
+  /** Enable or disable parent-unit audio-only low-power mode (DMY-24). */
+  setAudioOnlyEnabled: (enabled: boolean) => void;
   /**
    * Set the premium entitlement flag (DMY-11). PLACEHOLDER only — there is no
    * real purchase behind it (StoreKit is DMY-27). Exposed so tests and a future
