@@ -51,3 +51,8 @@ jest.mock('react-native-screens', () => {
     enableScreens: jest.fn(),
   };
 });
+
+// react-native-permissions (DMY-42) is a native TurboModule with no JS
+// fallback. Use the manual mock in __mocks__/react-native-permissions.ts so any
+// test that mounts the onboarding flow gets a working, overridable stub.
+jest.mock('react-native-permissions');

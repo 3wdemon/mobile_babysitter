@@ -33,6 +33,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera streams live video of your baby to your paired parent device. Video is sent peer-to-peer and end-to-end encrypted — it is never uploaded to any cloud.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone lets the parent device hear your baby and powers on-device cry detection. Audio is sent peer-to-peer and end-to-end encrypted — it never leaves your devices for a server.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>RCTNewArchEnabled</key>
