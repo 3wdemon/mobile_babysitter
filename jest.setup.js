@@ -86,3 +86,10 @@ jest.mock('react-native-keychain');
 // which build the real zeroconf adapter — mount without touching native code.
 // Discovery unit tests inject a fake ZeroconfBackend directly.
 jest.mock('react-native-zeroconf');
+
+// react-native-webrtc (DMY-16) is a native module (RTCPeerConnection etc.) with
+// no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-webrtc.ts (a controllable fake RTCPeerConnection) so the
+// peer-connection wrapper can be exercised. Most signalling tests inject a mock
+// PeerConnection / ctor directly through the PeerConnectionFactory seam.
+jest.mock('react-native-webrtc');
