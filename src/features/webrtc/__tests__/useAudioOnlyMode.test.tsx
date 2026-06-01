@@ -75,6 +75,21 @@ describe('useAudioOnlyMode', () => {
     expect(result.current.isPeeking).toBe(false);
   });
 
+  it('a peek does NOT mutate the persisted audioOnlyEnabled setting', () => {
+    const spy = makeSpyController();
+
+    const { result } = renderHook(() =>
+      useAudioOnlyMode({ controller: spy.controller }),
+    );
+
+    act(() => result.current.showVideo());
+    expect(useAppStore.getState().settings.audioOnlyEnabled).toBe(true);
+    expect(result.current.audioOnlyEnabled).toBe(true);
+
+    act(() => result.current.hideVideo());
+    expect(useAppStore.getState().settings.audioOnlyEnabled).toBe(true);
+  });
+
   it('requests video when audio-only is disabled (full video mode)', () => {
     act(() => useAppStore.getState().setAudioOnlyEnabled(false));
     const spy = makeSpyController();
