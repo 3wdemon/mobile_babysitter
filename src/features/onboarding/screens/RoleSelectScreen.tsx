@@ -52,7 +52,8 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.content}>
+      <View
+        style={[styles.content, { paddingHorizontal: theme.spacing.xl }]}>
         <Text
           accessibilityRole="header"
           style={[
@@ -134,7 +135,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
   },
   title: {},
   subtitle: {},

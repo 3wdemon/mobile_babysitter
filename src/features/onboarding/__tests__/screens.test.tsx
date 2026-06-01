@@ -7,6 +7,7 @@
  * RoleSelect store side-effects.
  */
 import React from 'react';
+import { ScrollView } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -64,6 +65,17 @@ describe('WelcomeScreen', () => {
     // (the renderer defaults to the light scheme here).
     expect(flat.color).toBe(lightTheme.colors.text);
   });
+
+  it('derives the scroll content padding from spacing tokens, not hard-coded literals', async () => {
+    renderScreen('Welcome', WelcomeScreen);
+    await screen.findByText('Mobile Babysitter');
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    const flat = flattenStyle(scroll.props.contentContainerStyle);
+    // Regression guard against re-introducing 24/32/16 literals (DMY-42 review).
+    expect(flat.paddingHorizontal).toBe(lightTheme.spacing.xl);
+    expect(flat.paddingTop).toBe(lightTheme.spacing.xxl);
+    expect(flat.paddingBottom).toBe(lightTheme.spacing.lg);
+  });
 });
 
 describe('PermissionsScreen', () => {
@@ -75,6 +87,16 @@ describe('PermissionsScreen', () => {
       expect(screen.getByText('Notifications')).toBeOnTheScreen();
       expect(screen.getByText('Allow access')).toBeOnTheScreen();
     });
+  });
+
+  it('derives the scroll content padding from spacing tokens, not hard-coded literals', async () => {
+    renderScreen('Permissions', PermissionsScreen);
+    await screen.findByText('A few permissions');
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    const flat = flattenStyle(scroll.props.contentContainerStyle);
+    expect(flat.paddingHorizontal).toBe(lightTheme.spacing.xl);
+    expect(flat.paddingTop).toBe(lightTheme.spacing.xxl);
+    expect(flat.paddingBottom).toBe(lightTheme.spacing.lg);
   });
 });
 
@@ -107,6 +129,23 @@ describe('RoleSelectScreen', () => {
     // Title colour comes from the theme text token.
     const flat = flattenStyle(title.props.style);
     expect(flat.color).toBe(lightTheme.colors.text);
+  });
+
+  it('derives the content padding from a spacing token, not a hard-coded literal', async () => {
+    renderScreen('RoleSelect', RoleSelectScreen);
+    const heading = await screen.findByText('What is this phone for?');
+    // Walk up to the content View that carries the horizontal padding.
+    let node = heading.parent;
+    let padding: unknown;
+    while (node) {
+      const flat = flattenStyle(node.props.style);
+      if (flat.paddingHorizontal !== undefined) {
+        padding = flat.paddingHorizontal;
+        break;
+      }
+      node = node.parent;
+    }
+    expect(padding).toBe(lightTheme.spacing.xl);
   });
 });
 

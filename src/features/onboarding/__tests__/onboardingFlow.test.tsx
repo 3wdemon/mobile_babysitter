@@ -86,6 +86,26 @@ describe('onboarding gating', () => {
       expect(screen.getByText('Baby unit')).toBeOnTheScreen();
     });
   });
+
+  it('falls back to the Pairing screen when onboarding is complete but no role was ever recorded (legacy state)', async () => {
+    // Legacy/edge state: completed flag is set but role stayed null. The
+    // RootNavigator must not crash and should land on Pairing, from where the
+    // user can still pick a unit (see RootNavigator initialRouteName fallback).
+    act(() => {
+      useAppStore.getState().completeOnboarding();
+    });
+    expect(useAppStore.getState().role).toBeNull();
+
+    render(<App />);
+
+    await waitFor(() => {
+      // Pairing-screen entry copy (distinct from RoleSelect's "Baby unit").
+      expect(screen.getByText('Use as Baby unit')).toBeOnTheScreen();
+      expect(screen.getByText('Use as Parent unit')).toBeOnTheScreen();
+    });
+    // Onboarding copy must not appear.
+    expect(screen.queryByText('No cloud, no accounts')).toBeNull();
+  });
 });
 
 describe('onboarding flow', () => {

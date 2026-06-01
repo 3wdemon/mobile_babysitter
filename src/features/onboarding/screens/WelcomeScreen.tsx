@@ -34,7 +34,15 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingHorizontal: theme.spacing.xl,
+            paddingTop: theme.spacing.xxl,
+            paddingBottom: theme.spacing.lg,
+          },
+        ]}>
         <Text
           accessibilityRole="header"
           style={[
@@ -144,11 +152,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 16,
-  },
+  content: {},
   title: {
     marginBottom: 8,
   },
