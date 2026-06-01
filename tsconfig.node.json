@@ -1,0 +1,15 @@
+{
+  // Type-check config files that run in the Node toolchain (Playwright, Metro,
+  // Babel, Jest configs) — NOT app code. Node globals (Buffer, process,
+  // require) live here only. The root tsconfig deliberately omits "node" so
+  // those globals stay invisible to src/, where the RN runtime has no Node API.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  // Override the root exclude (which drops *.config.ts) so this project can
+  // actually type-check the config files.
+  "exclude": ["**/node_modules", "**/Pods"],
+  "include": ["playwright.config.ts"]
+}

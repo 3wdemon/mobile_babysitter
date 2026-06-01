@@ -1,8 +1,11 @@
 {
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
-    "types": ["jest", "node"]
+    "types": ["jest"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["**/node_modules", "**/Pods"]
+  // Config files run in the Node toolchain, not the RN runtime. They are typed
+  // by tsconfig.node.json (which supplies Node globals) and excluded here so
+  // the app program stays free of Node types — see tsconfig.node.json.
+  "exclude": ["**/node_modules", "**/Pods", "*.config.ts"]
 }
