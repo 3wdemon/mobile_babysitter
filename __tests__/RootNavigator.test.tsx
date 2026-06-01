@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
 
 import RootNavigator from '../src/navigation/RootNavigator';
@@ -51,7 +51,9 @@ test('navigates from Pairing to Baby and back', async () => {
   });
 
   // System back action returns to the Pairing route.
-  ref.current?.goBack();
+  act(() => {
+    ref.current?.goBack();
+  });
 
   await waitFor(() => {
     expect(ref.current?.getCurrentRoute()?.name).toBe('Pairing');
@@ -70,7 +72,9 @@ test('navigates to Parent via navigation ref and goes back', async () => {
   });
 
   // System back action returns to the initial route.
-  ref.current?.goBack();
+  act(() => {
+    ref.current?.goBack();
+  });
 
   await waitFor(() => {
     expect(ref.current?.getCurrentRoute()?.name).toBe('Pairing');
@@ -93,7 +97,9 @@ test('RootStackParamList rejects unknown routes at compile time', async () => {
   };
 
   // Valid navigation still works at runtime.
-  ref.current?.navigate('Parent');
+  act(() => {
+    ref.current?.navigate('Parent');
+  });
 
   await waitFor(() => {
     expect(ref.current?.getCurrentRoute()?.name).toBe('Parent');
