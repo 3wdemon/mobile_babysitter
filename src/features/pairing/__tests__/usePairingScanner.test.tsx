@@ -160,4 +160,44 @@ describe('usePairingScanner', () => {
       ).not.toThrow();
     }
   });
+
+  describe('pairWithSessionId (local discovery / DMY-7)', () => {
+    it('pairs with a discovered session id and updates the store', () => {
+      const payload = createPairingPayload(undefined, NOW);
+      const { result } = renderHook(() => usePairingScanner(now));
+      act(() => {
+        result.current.pairWithSessionId(payload.sessionId);
+      });
+
+      expect(result.current.status).toBe('paired');
+      expect(result.current.sessionId).toBe(payload.sessionId);
+      expect(storeSnapshot()).toEqual({
+        connectionStatus: 'paired',
+        pairedSessionId: payload.sessionId,
+      });
+    });
+
+    it('rejects a malformed session id without touching the store', () => {
+      const { result } = renderHook(() => usePairingScanner(now));
+      act(() => {
+        result.current.pairWithSessionId('not-a-uuid');
+      });
+
+      expect(result.current.status).toBe('error');
+      expect(result.current.errorReason).toBe('invalid');
+      expect(storeSnapshot()).toEqual({
+        connectionStatus: 'idle',
+        pairedSessionId: null,
+      });
+    });
+
+    it('is ignored once already paired (lock)', () => {
+      const first = createPairingPayload(undefined, NOW);
+      const second = createPairingPayload(undefined, NOW);
+      const { result } = renderHook(() => usePairingScanner(now));
+      act(() => result.current.pairWithSessionId(first.sessionId));
+      act(() => result.current.pairWithSessionId(second.sessionId));
+      expect(result.current.sessionId).toBe(first.sessionId);
+    });
+  });
 });

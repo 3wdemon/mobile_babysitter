@@ -32,6 +32,14 @@ const EXACT_SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   // already caught by the boundary matcher.)
   'apikey',
   'apitoken',
+  // Pairing/discovery session identifier. Not a cryptographic secret (it is
+  // also shown in the QR), but masked defence-in-depth so it never prints in
+  // the clear. Listed as EXACT keys so `sessionId`/`sessionID`/`session_id`
+  // are caught while broad diagnostic fields like `sessionActive` /
+  // `sessionStartTime` stay visible (we deliberately do NOT pattern-match the
+  // bare word `session`).
+  'sessionid',
+  'session_id',
 ]);
 
 /**

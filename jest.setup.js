@@ -79,3 +79,10 @@ jest.mock('react-native-biometrics');
 // __mocks__/react-native-keychain.ts (in-memory generic-password store) so the
 // PIN service persists/verifies and tests can assert nothing plaintext is stored.
 jest.mock('react-native-keychain');
+
+// react-native-zeroconf (DMY-7) bridges to a native NSD/DNSSD mDNS module with
+// no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-zeroconf.ts (inert spies) so the pairing screens —
+// which build the real zeroconf adapter — mount without touching native code.
+// Discovery unit tests inject a fake ZeroconfBackend directly.
+jest.mock('react-native-zeroconf');
