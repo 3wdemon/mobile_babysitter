@@ -67,8 +67,11 @@ describe('onboarding gating', () => {
 
     render(<App />);
 
+    // The Parent route renders the QR-scanning pairing screen (DMY-14). With
+    // camera permission not yet granted it shows the permission gate.
     await waitFor(() => {
-      expect(screen.getByText('Parent unit')).toBeOnTheScreen();
+      expect(screen.getByTestId('parent-pairing')).toBeOnTheScreen();
+      expect(screen.getByText('Camera access needed')).toBeOnTheScreen();
     });
     // Onboarding copy must not appear.
     expect(screen.queryByText('No cloud, no accounts')).toBeNull();

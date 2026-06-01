@@ -68,6 +68,50 @@ describe('useAppStore', () => {
       alertSoundsEnabled: true,
     });
     expect(state.connectionStatus).toBe('idle');
+    expect(state.pairedSessionId).toBeNull();
+  });
+
+  describe('pairing actions (DMY-14)', () => {
+    it('setPaired records the session id and moves to "paired" (not connected)', () => {
+      act(() => {
+        useAppStore.getState().setPaired('11111111-1111-4111-8111-111111111111');
+      });
+      const state = useAppStore.getState();
+      expect(state.pairedSessionId).toBe(
+        '11111111-1111-4111-8111-111111111111',
+      );
+      expect(state.connectionStatus).toBe('paired');
+      // Honest: pairing != a live media connection.
+      expect(state.connectionStatus).not.toBe('connected');
+    });
+
+    it('clearPairing forgets the session and returns to idle', () => {
+      act(() => {
+        useAppStore.getState().setPaired('22222222-2222-4222-8222-222222222222');
+        useAppStore.getState().clearPairing();
+      });
+      const state = useAppStore.getState();
+      expect(state.pairedSessionId).toBeNull();
+      expect(state.connectionStatus).toBe('idle');
+    });
+
+    it('reset clears the pairing session', () => {
+      act(() => {
+        useAppStore.getState().setPaired('33333333-3333-4333-8333-333333333333');
+        useAppStore.getState().reset();
+      });
+      expect(useAppStore.getState().pairedSessionId).toBeNull();
+      expect(useAppStore.getState().connectionStatus).toBe('idle');
+    });
+
+    it('pairedSessionId is ephemeral — never persisted to disk', () => {
+      act(() => {
+        useAppStore.getState().setPaired('44444444-4444-4444-8444-444444444444');
+      });
+      const blob = readPersistedBlob();
+      expect(blob?.state).not.toHaveProperty('pairedSessionId');
+      expect(blob?.state).not.toHaveProperty('connectionStatus');
+    });
   });
 
   it('updates state via actions', () => {
