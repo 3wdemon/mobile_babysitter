@@ -62,8 +62,10 @@ test('navigates from Pairing to Baby and back', async () => {
 
   fireEvent.press(screen.getByText('Use as Baby unit'));
 
+  // The Baby route renders the QR pairing screen (DMY-6), whose header is
+  // "Pair this baby unit".
   await waitFor(() => {
-    expect(screen.getByText('Baby unit')).toBeOnTheScreen();
+    expect(screen.getByText('Pair this baby unit')).toBeOnTheScreen();
     expect(ref.current?.getCurrentRoute()?.name).toBe('Baby');
   });
 

@@ -82,8 +82,10 @@ describe('onboarding gating', () => {
 
     render(<App />);
 
+    // The Baby route renders the QR pairing screen (DMY-6), headed
+    // "Pair this baby unit".
     await waitFor(() => {
-      expect(screen.getByText('Baby unit')).toBeOnTheScreen();
+      expect(screen.getByText('Pair this baby unit')).toBeOnTheScreen();
     });
   });
 
