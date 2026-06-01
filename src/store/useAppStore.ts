@@ -30,6 +30,8 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
   settings: {
     theme: 'system',
     alertSoundsEnabled: true,
+    // Opt-in: parent mode is unlocked by default until the user turns this on.
+    biometricLockEnabled: false,
   },
 };
 
@@ -63,6 +65,10 @@ export const useAppStore = create<AppState>()(
             ...state.settings,
             alertSoundsEnabled: !state.settings.alertSoundsEnabled,
           },
+        })),
+      setBiometricLockEnabled: enabled =>
+        set(state => ({
+          settings: { ...state.settings, biometricLockEnabled: enabled },
         })),
       setConnectionStatus: connectionStatus => set({ connectionStatus }),
       // Pairing succeeded (QR scanned + validated). We record the session id and

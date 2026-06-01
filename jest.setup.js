@@ -68,3 +68,14 @@ jest.mock('react-native-qrcode-svg');
 // mock in __mocks__/react-native-vision-camera.tsx so the parent pairing screen
 // mounts and tests can drive scans via its `__emitScan` helper.
 jest.mock('react-native-vision-camera');
+
+// react-native-biometrics (DMY-10) is a native module with no JS fallback under
+// Jest. Use the manual mock in __mocks__/react-native-biometrics.ts so the auth
+// flow mounts and tests can drive sensor availability / prompt outcomes.
+jest.mock('react-native-biometrics');
+
+// react-native-keychain (DMY-10) bridges to the iOS Keychain / Android Keystore
+// with no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-keychain.ts (in-memory generic-password store) so the
+// PIN service persists/verifies and tests can assert nothing plaintext is stored.
+jest.mock('react-native-keychain');

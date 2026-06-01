@@ -56,6 +56,12 @@ export interface Settings {
   theme: ThemePreference;
   /** Whether sound is played for alerts (cry/noise detection). */
   alertSoundsEnabled: boolean;
+  /**
+   * Whether entering parent monitoring mode requires biometric / PIN unlock
+   * (DMY-10). Opt-in: defaults to `false`, so the lock gate is bypassed and the
+   * parent screen behaves exactly as before until the user enables it.
+   */
+  biometricLockEnabled: boolean;
 }
 
 /**
@@ -94,6 +100,8 @@ export interface AppActions {
   setTheme: (theme: ThemePreference) => void;
   /** Toggle alert sounds on/off. */
   toggleAlertSounds: () => void;
+  /** Enable or disable the biometric/PIN lock on parent mode (DMY-10). */
+  setBiometricLockEnabled: (enabled: boolean) => void;
   /** Update the ephemeral connection status. */
   setConnectionStatus: (status: ConnectionStatus) => void;
   /**
