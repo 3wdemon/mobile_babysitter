@@ -90,6 +90,18 @@ describe('logger', () => {
         peer: { sdp: REDACTED, id: 7 },
       });
     });
+
+    it('logs Error name/message instead of an empty object', () => {
+      const logger = loadLogger(true);
+      logger.error(new Error('connect failed token=abc'));
+
+      const call = spies.error.mock.calls[0];
+      expect(call[0]).toBe('[ERROR]');
+      const payload = call[1] as Record<string, unknown>;
+      expect(payload.name).toBe('Error');
+      expect(payload.message).toBe(`connect failed token=${REDACTED}`);
+      expect(typeof payload.stack).toBe('string');
+    });
   });
 
   describe('robustness', () => {

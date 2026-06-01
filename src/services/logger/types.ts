@@ -4,6 +4,14 @@
  * Privacy-first: logs are emitted to the console only. The logger never
  * performs any network I/O, so sensitive data redaction is a defence-in-depth
  * measure for local debug output, crash console capture and screen recordings.
+ *
+ * Redaction model (see `redact`):
+ *  - Primarily **key-based**: properties whose name denotes a secret are masked.
+ *  - Plus a small **value-level** pass over strings for high-confidence inline
+ *    patterns (`Bearer <token>`, `token=...`, `password=...`, etc.).
+ *  - It is intentionally NOT a general secret scanner: opaque high-entropy
+ *    values with no recognised key/pattern are not detected. Known limitation,
+ *    acceptable because the logger is console-only and offline.
  */
 
 /**
