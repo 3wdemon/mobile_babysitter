@@ -25,6 +25,13 @@ const EXACT_SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   'email',
   'key',
   'biometric',
+  // All-lowercase concatenations have no camelCase/separator boundary, so the
+  // pattern matcher (correctly) rejects them to avoid `monkey`-style false
+  // positives. These two are common literal JSON/env key spellings, so we list
+  // them explicitly to close the leak. (`apiKey`/`API_KEY`/`apiToken` etc. are
+  // already caught by the boundary matcher.)
+  'apikey',
+  'apitoken',
 ]);
 
 /**

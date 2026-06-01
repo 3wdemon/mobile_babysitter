@@ -237,6 +237,28 @@ describe('redact', () => {
       expect(isSensitiveKey('SDPKey')).toBe(true);
       expect(isSensitiveKey('XToken')).toBe(true);
     });
+
+    it('redacts all-lowercase apikey / apitoken (no camelCase boundary)', () => {
+      // These have no separator or camelCase transition, so the word-boundary
+      // matcher rejects them (same logic that rejects `monkey`). They are
+      // common literal JSON/env spellings, so they are exact-listed instead.
+      expect(isSensitiveKey('apikey')).toBe(true);
+      expect(isSensitiveKey('apitoken')).toBe(true);
+
+      const result = redact({
+        apikey: 'LEAK',
+        apitoken: 'LEAK',
+        apiKey: 'LEAK',
+        APIKey: 'LEAK',
+        roomId: 'r1',
+      }) as Record<string, unknown>;
+      expect(result.apikey).toBe(REDACTED);
+      expect(result.apitoken).toBe(REDACTED);
+      expect(result.apiKey).toBe(REDACTED);
+      expect(result.APIKey).toBe(REDACTED);
+      expect(result.roomId).toBe('r1');
+      expect(JSON.stringify(result)).not.toContain('LEAK');
+    });
   });
 
   describe('symbol keys (S2)', () => {
