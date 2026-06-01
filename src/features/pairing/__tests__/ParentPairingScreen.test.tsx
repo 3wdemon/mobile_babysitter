@@ -35,6 +35,17 @@ const {
   __setMockDevice: (device: unknown) => void;
 };
 
+// Test-only helpers on the zeroconf mock to drive mDNS discovery (DMY-7).
+const {
+  __emitResolved,
+  __resetZeroconfMock,
+} = jest.requireMock('react-native-zeroconf') as {
+  __emitResolved: (service: unknown) => void;
+  __resetZeroconfMock: () => void;
+};
+
+const DISCOVERY_PORT = 8443;
+
 /** A QR payload that is fresh relative to real `Date.now()` (the screen uses it). */
 function freshQr(): { qr: string; sessionId: string } {
   const payload = createPairingPayload(undefined, Date.now());
@@ -45,6 +56,7 @@ describe('ParentPairingScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     __resetVisionCameraMock();
+    __resetZeroconfMock();
     act(() => useAppStore.getState().reset());
     mockRequestMultiple.mockImplementation(async (permissions: string[]) => {
       const result: Record<string, string> = {};
@@ -180,6 +192,37 @@ describe('ParentPairingScreen', () => {
 
     expect(screen.getByTestId('camera-unavailable')).toBeTruthy();
     expect(screen.queryByTestId('camera-view')).toBeNull();
+  });
+
+  it('lists a baby-unit discovered over mDNS and pairs on tap (DMY-7)', async () => {
+    const { sessionId } = freshQr();
+    render(<ParentPairingScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('camera-permission-action'));
+    });
+
+    // Initially the discovery list is empty (scanning).
+    expect(screen.getByTestId('discovered-empty')).toBeTruthy();
+
+    // A baby-unit resolves on the LAN.
+    act(() => {
+      __emitResolved({
+        name: `mbs-${sessionId.slice(0, 8)}`,
+        host: '192.168.1.50',
+        port: DISCOVERY_PORT,
+        txt: { sid: sessionId, v: '1' },
+      });
+    });
+
+    const row = screen.getByTestId(`discovered-unit-${sessionId}`);
+    expect(row).toBeTruthy();
+
+    // Tapping pairs via the discovered session id (no QR scan).
+    act(() => fireEvent.press(row));
+
+    expect(screen.getByText('Paired')).toBeTruthy();
+    expect(useAppStore.getState().connectionStatus).toBe('paired');
+    expect(useAppStore.getState().pairedSessionId).toBe(sessionId);
   });
 
   it('styles the permission gate button from design tokens', () => {

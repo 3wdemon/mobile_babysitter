@@ -14,6 +14,20 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Local-network discovery permissions (DMY-7). Used by react-native-zeroconf
+      (Android NSD) so the parent phone can find the baby unit over mDNS/Bonjour
+      on the same Wi-Fi WITHOUT scanning a QR code:
+        CHANGE_WIFI_MULTICAST_STATE — acquire a multicast lock so the device
+          receives mDNS multicast packets (NSD does not work reliably without it).
+        ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE — observe Wi-Fi/network state to
+          gate discovery to the local network.
+      Discovery is local-only; nothing is uploaded to a cloud.
+    -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <uses-feature
       android:name="android.hardware.camera"
       android:required="false" />

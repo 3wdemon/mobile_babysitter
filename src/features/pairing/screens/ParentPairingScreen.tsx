@@ -34,6 +34,8 @@ import {
 import { useTheme } from '../../../hooks/useTheme';
 import { logger } from '../../../services/logger';
 import { usePermissions } from '../../onboarding/usePermissions';
+import DiscoveredUnitsList from '../discovery/DiscoveredUnitsList';
+import { useDiscoveredUnits } from '../discovery/useDiscovery';
 import { usePairingScanner } from '../usePairingScanner';
 import type { PairingScanRejectReason } from '../types';
 
@@ -61,7 +63,21 @@ function ParentPairingScreen() {
   const cameraStatus = statuses.camera;
   const hasCamera = cameraStatus === 'granted';
 
-  const { status, errorReason, onScan, reset } = usePairingScanner();
+  const { status, errorReason, onScan, pairWithSessionId, reset } =
+    usePairingScanner();
+
+  // mDNS/Bonjour local discovery (DMY-7): browse the LAN for baby-units while
+  // the scanner is open, as a QR-free alternative on the same Wi-Fi. Gated on
+  // camera permission only because the whole pairing view is — discovery itself
+  // needs no camera. Tapping a unit pairs via its advertised session id.
+  const { units, scanning } = useDiscoveredUnits({ enabled: hasCamera });
+
+  const onSelectDiscovered = useCallback(
+    (sessionId: string) => {
+      pairWithSessionId(sessionId);
+    },
+    [pairWithSessionId],
+  );
 
   // Back camera; undefined while devices enumerate or on a device with none.
   const device = useCameraDevice('back');
@@ -103,6 +119,10 @@ function ParentPairingScreen() {
   // Precomputed so the dynamic style below holds no literal style values
   // (keeps react-native/no-inline-styles happy).
   const requestButtonOpacity = requesting ? 0.6 : 1;
+  const discoveryStyle = useMemo(
+    () => ({ marginTop: theme.spacing.lg }),
+    [theme.spacing.lg],
+  );
 
   // --- Permission gate -------------------------------------------------------
   if (!hasCamera) {
@@ -308,6 +328,14 @@ function ParentPairingScreen() {
             ? reject.body
             : 'Point the camera at the QR code shown on the baby phone.'}
         </Text>
+
+        <View style={discoveryStyle}>
+          <DiscoveredUnitsList
+            units={units}
+            scanning={scanning}
+            onSelect={onSelectDiscovered}
+          />
+        </View>
       </View>
     </View>
   );

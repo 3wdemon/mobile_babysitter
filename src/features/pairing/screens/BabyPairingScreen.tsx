@@ -14,6 +14,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { usePublishService } from '../discovery/useDiscovery';
 import { usePairingSession } from '../usePairingSession';
 
 /** Fixed QR module size in dp; large enough to scan comfortably across a room. */
@@ -21,7 +22,13 @@ const QR_SIZE = 240;
 
 function BabyPairingScreen() {
   const theme = useTheme();
-  const { qrValue, regenerate } = usePairingSession();
+  const { payload, qrValue, regenerate } = usePairingSession();
+
+  // mDNS/Bonjour: advertise this baby-unit on the LAN so a parent on the same
+  // Wi-Fi can find it WITHOUT scanning the QR (DMY-7). The advertisement
+  // carries only the ephemeral session id + version (no PII). Re-advertises
+  // when "New code" mints a fresh session; withdraws on unmount.
+  const { publishing } = usePublishService({ sessionId: payload.sessionId });
 
   return (
     <View
@@ -73,6 +80,22 @@ function BabyPairingScreen() {
         />
       </View>
 
+      <Text
+        testID="network-visibility"
+        style={[
+          styles.networkStatus,
+          {
+            color: publishing ? theme.colors.success : theme.colors.textMuted,
+            fontSize: theme.typography.fontSizes.sm,
+            lineHeight: theme.typography.lineHeights.sm,
+            marginTop: theme.spacing.lg,
+          },
+        ]}>
+        {publishing
+          ? 'Visible on your Wi-Fi — the parent phone can find this unit without scanning.'
+          : 'Show the code above to pair.'}
+      </Text>
+
       <TouchableOpacity
         accessibilityRole="button"
         style={[
@@ -113,6 +136,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
+    textAlign: 'center',
+  },
+  networkStatus: {
     textAlign: 'center',
   },
   qrFrame: {

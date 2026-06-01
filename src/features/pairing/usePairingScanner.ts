@@ -25,7 +25,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import { logger } from '../../services/logger';
 import { useAppStore } from '../../store/useAppStore';
-import { validateScannedPayload } from './pairingService';
+import { isValidSessionId, validateScannedPayload } from './pairingService';
 import type { PairingScanRejectReason } from './types';
 
 /** UI-facing scan state. */
@@ -45,6 +45,15 @@ export interface UsePairingScanner {
    * synchronously.
    */
   readonly onScan: (raw: string) => PairingScanStatus;
+  /**
+   * Pair directly with a `sessionId` discovered out-of-band — e.g. a baby-unit
+   * found over mDNS/Bonjour on the LAN (DMY-7) rather than via a scanned QR.
+   * Records the SAME `paired` state as a successful scan (sessionId +
+   * `connectionStatus: 'paired'`) and locks the scanner. The id is validated as
+   * a UUID v4; a malformed id surfaces an `invalid` error WITHOUT touching the
+   * store. Never throws. Ignored once already paired (until {@link reset}).
+   */
+  readonly pairWithSessionId: (sessionId: string) => PairingScanStatus;
   /** Return to `scanning`, clearing any error/paired state and the store pairing. */
   readonly reset: () => void;
 }
@@ -104,6 +113,41 @@ export function usePairingScanner(now?: () => number): UsePairingScanner {
     [now, setPaired],
   );
 
+  const pairWithSessionId = useCallback(
+    (id: string): PairingScanStatus => {
+      if (lockedRef.current) {
+        return 'paired';
+      }
+      if (!isValidSessionId(id)) {
+        // A discovered unit with a malformed id is not one of ours — surface an
+        // invalid error, leave the store untouched, keep scanning.
+        logger.warn('pairing: rejected discovered session id', {
+          reason: 'invalid',
+        });
+        setErrorReason('invalid');
+        setStatus('error');
+        return 'error';
+      }
+
+      lockedRef.current = true;
+      // sessionId is masked by the logger.
+      logger.info('pairing: parent paired via local discovery', {
+        sessionId: id,
+      });
+      setPaired(id);
+      setSessionId(id);
+      setErrorReason(null);
+      setStatus('paired');
+
+      // TODO(DMY-16/18): start the WebRTC signalling handshake here using the
+      // discovered unit (sessionId + the resolved host/port endpoint). Until
+      // then we remain honestly at "paired (signalling pending)".
+
+      return 'paired';
+    },
+    [setPaired],
+  );
+
   const reset = useCallback(() => {
     lockedRef.current = false;
     setStatus('scanning');
@@ -112,5 +156,5 @@ export function usePairingScanner(now?: () => number): UsePairingScanner {
     clearPairing();
   }, [clearPairing]);
 
-  return { status, sessionId, errorReason, onScan, reset };
+  return { status, sessionId, errorReason, onScan, pairWithSessionId, reset };
 }

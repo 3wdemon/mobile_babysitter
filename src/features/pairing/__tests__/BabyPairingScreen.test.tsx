@@ -56,6 +56,14 @@ describe('BabyPairingScreen', () => {
     expect(screen.queryByText(value)).toBeNull();
   });
 
+  it('shows the network-visibility indicator (DMY-7 mDNS advertising)', () => {
+    render(<BabyPairingScreen />);
+    // The zeroconf adapter is mocked (inert spies) so publishing succeeds and
+    // the baby-unit reports it is discoverable on the LAN.
+    expect(screen.getByTestId('network-visibility')).toBeTruthy();
+    expect(screen.getByText(/Visible on your Wi-Fi/i)).toBeTruthy();
+  });
+
   it('styles the QR frame from design tokens (no hard-coded colours)', () => {
     render(<BabyPairingScreen />);
     const frame = screen.getByTestId('pairing-qr');
