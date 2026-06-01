@@ -66,6 +66,12 @@ yarn-error.log
 # testing
 /coverage
 
+# Playwright
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
+
 # Yarn
 .yarn/*
 !.yarn/patches

@@ -6,5 +6,8 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-screens)/)',
   ],
+  // Playwright owns tests/e2e (E2E web). Keep Jest out of it so the two runners
+  // never pick up each other's *.spec files.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/e2e/'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
 };
