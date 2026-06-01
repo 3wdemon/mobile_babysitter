@@ -66,6 +66,7 @@ describe('useAppStore', () => {
     expect(state.settings).toEqual({
       theme: 'system',
       alertSoundsEnabled: true,
+      noiseThreshold: 0.6,
       biometricLockEnabled: false,
     });
     expect(state.connectionStatus).toBe('idle');
@@ -75,7 +76,9 @@ describe('useAppStore', () => {
   describe('pairing actions (DMY-14)', () => {
     it('setPaired records the session id and moves to "paired" (not connected)', () => {
       act(() => {
-        useAppStore.getState().setPaired('11111111-1111-4111-8111-111111111111');
+        useAppStore
+          .getState()
+          .setPaired('11111111-1111-4111-8111-111111111111');
       });
       const state = useAppStore.getState();
       expect(state.pairedSessionId).toBe(
@@ -88,7 +91,9 @@ describe('useAppStore', () => {
 
     it('clearPairing forgets the session and returns to idle', () => {
       act(() => {
-        useAppStore.getState().setPaired('22222222-2222-4222-8222-222222222222');
+        useAppStore
+          .getState()
+          .setPaired('22222222-2222-4222-8222-222222222222');
         useAppStore.getState().clearPairing();
       });
       const state = useAppStore.getState();
@@ -98,7 +103,9 @@ describe('useAppStore', () => {
 
     it('reset clears the pairing session', () => {
       act(() => {
-        useAppStore.getState().setPaired('33333333-3333-4333-8333-333333333333');
+        useAppStore
+          .getState()
+          .setPaired('33333333-3333-4333-8333-333333333333');
         useAppStore.getState().reset();
       });
       expect(useAppStore.getState().pairedSessionId).toBeNull();
@@ -107,7 +114,9 @@ describe('useAppStore', () => {
 
     it('pairedSessionId is ephemeral — never persisted to disk', () => {
       act(() => {
-        useAppStore.getState().setPaired('44444444-4444-4444-8444-444444444444');
+        useAppStore
+          .getState()
+          .setPaired('44444444-4444-4444-8444-444444444444');
       });
       const blob = readPersistedBlob();
       expect(blob?.state).not.toHaveProperty('pairedSessionId');
@@ -213,6 +222,7 @@ describe('useAppStore', () => {
       expect(restored.settings).toEqual({
         theme: 'system',
         alertSoundsEnabled: true,
+        noiseThreshold: 0.6,
         biometricLockEnabled: false,
       });
       expect(restored.connectionStatus).toBe('idle');
@@ -233,6 +243,7 @@ describe('useAppStore', () => {
       expect(restored?.settings).toEqual({
         theme: 'system',
         alertSoundsEnabled: true,
+        noiseThreshold: 0.6,
         biometricLockEnabled: false,
       });
     });
@@ -241,9 +252,7 @@ describe('useAppStore', () => {
       // Well-formed JSON but with values that do not match the schema. The
       // store must survive (no crash on hydration) even if it cannot fully
       // recover every field.
-      seedPersistedRaw(
-        JSON.stringify({ state: { role: 12345 }, version: 0 }),
-      );
+      seedPersistedRaw(JSON.stringify({ state: { role: 12345 }, version: 0 }));
       expect(() => restartAndGetState()).not.toThrow();
     });
   });
@@ -269,6 +278,7 @@ describe('useAppStore', () => {
         settings: {
           theme: 'system',
           alertSoundsEnabled: true,
+          noiseThreshold: 0.6,
           biometricLockEnabled: false,
         },
       });
@@ -286,13 +296,47 @@ describe('useAppStore', () => {
       act(() => {
         useAppStore.getState().toggleAlertSounds();
       });
-      expect(useAppStore.getState().settings.alertSoundsEnabled).toBe(
-        !initial,
-      );
+      expect(useAppStore.getState().settings.alertSoundsEnabled).toBe(!initial);
       act(() => {
         useAppStore.getState().toggleAlertSounds();
       });
       expect(useAppStore.getState().settings.alertSoundsEnabled).toBe(initial);
+    });
+  });
+
+  describe('noise threshold (DMY-8)', () => {
+    it('updates the noise threshold within range', () => {
+      act(() => {
+        useAppStore.getState().setNoiseThreshold(0.75);
+      });
+      expect(useAppStore.getState().settings.noiseThreshold).toBe(0.75);
+    });
+
+    it('clamps out-of-range values to [0, 1]', () => {
+      act(() => {
+        useAppStore.getState().setNoiseThreshold(5);
+      });
+      expect(useAppStore.getState().settings.noiseThreshold).toBe(1);
+      act(() => {
+        useAppStore.getState().setNoiseThreshold(-3);
+      });
+      expect(useAppStore.getState().settings.noiseThreshold).toBe(0);
+    });
+
+    it('ignores non-finite values, keeping the previous threshold', () => {
+      act(() => {
+        useAppStore.getState().setNoiseThreshold(0.5);
+        useAppStore.getState().setNoiseThreshold(NaN);
+      });
+      expect(useAppStore.getState().settings.noiseThreshold).toBe(0.5);
+    });
+
+    it('persists the noise threshold across a simulated restart', () => {
+      act(() => {
+        useAppStore.getState().setNoiseThreshold(0.42);
+      });
+      const restored = restartAndGetState();
+      expect(restored.settings.noiseThreshold).toBe(0.42);
     });
   });
 

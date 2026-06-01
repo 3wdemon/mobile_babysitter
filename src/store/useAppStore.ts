@@ -30,6 +30,10 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
   settings: {
     theme: 'system',
     alertSoundsEnabled: true,
+    // Default noise sensitivity (enter-threshold on the 0..1 loudness scale).
+    // Mirrors DEFAULT_NOISE_CONFIG.enterThreshold in features/detection; kept as
+    // a literal so the store does not depend on the feature module. (DMY-8)
+    noiseThreshold: 0.6,
     // Opt-in: parent mode is unlocked by default until the user turns this on.
     biometricLockEnabled: false,
   },
@@ -64,6 +68,16 @@ export const useAppStore = create<AppState>()(
           settings: {
             ...state.settings,
             alertSoundsEnabled: !state.settings.alertSoundsEnabled,
+          },
+        })),
+      setNoiseThreshold: threshold =>
+        set(state => ({
+          settings: {
+            ...state.settings,
+            // Clamp to [0, 1]; ignore NaN/Infinity by falling back to current.
+            noiseThreshold: Number.isFinite(threshold)
+              ? Math.min(1, Math.max(0, threshold))
+              : state.settings.noiseThreshold,
           },
         })),
       setBiometricLockEnabled: enabled =>

@@ -57,6 +57,12 @@ export interface Settings {
   /** Whether sound is played for alerts (cry/noise detection). */
   alertSoundsEnabled: boolean;
   /**
+   * Noise-detection sensitivity as the loudness enter-threshold on a normalised
+   * 0..1 scale (DMY-8). Higher = less sensitive (a louder sound is required to
+   * trigger a noise event). Only this scalar is persisted; no audio is stored.
+   */
+  noiseThreshold: number;
+  /**
    * Whether entering parent monitoring mode requires biometric / PIN unlock
    * (DMY-10). Opt-in: defaults to `false`, so the lock gate is bypassed and the
    * parent screen behaves exactly as before until the user enables it.
@@ -100,6 +106,11 @@ export interface AppActions {
   setTheme: (theme: ThemePreference) => void;
   /** Toggle alert sounds on/off. */
   toggleAlertSounds: () => void;
+  /**
+   * Set the noise-detection sensitivity (enter-threshold, 0..1) (DMY-8).
+   * Out-of-range or non-finite values are clamped to [0, 1].
+   */
+  setNoiseThreshold: (threshold: number) => void;
   /** Enable or disable the biometric/PIN lock on parent mode (DMY-10). */
   setBiometricLockEnabled: (enabled: boolean) => void;
   /** Update the ephemeral connection status. */
