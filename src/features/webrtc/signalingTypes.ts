@@ -22,6 +22,7 @@
  * `candidate` keys, so every signalling message logged through it has those
  * fields blanked. We NEVER log a raw SDP/candidate string outside that path.
  */
+import type { MediaStreamLike, MediaStreamTrackLike } from './mediaTypes';
 
 /**
  * Which side of the signalling handshake this device plays. Derived from the
@@ -190,6 +191,14 @@ export interface PeerConnection {
   setRemoteDescription(description: SignalingSdp): Promise<void>;
   /** Add an ICE candidate received from the peer. */
   addIceCandidate(candidate: SignalingIceCandidate): Promise<void>;
+  /**
+   * Publish a local media track (baby-unit audio, DMY-18). Adds the track —
+   * with its stream — to the connection so it is transmitted to the peer over
+   * the encrypted SRTP session. Must be called BEFORE the offer is created so
+   * the audio m-line is part of the initial negotiation. No-op-safe if the
+   * underlying connection does not support `addTrack`.
+   */
+  addAudioTrack(track: MediaStreamTrackLike, stream: MediaStreamLike): void;
   /** Subscribe to a wrapper event. Returns an unsubscribe function. */
   on<K extends keyof PeerConnectionEvents>(
     event: K,
