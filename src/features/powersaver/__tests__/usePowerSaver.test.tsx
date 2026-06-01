@@ -146,6 +146,49 @@ describe('usePowerSaver', () => {
     expect(spy.setBrightness).toHaveBeenCalledTimes(1);
   });
 
+  it('restores the previous backend and re-applies on the new one when the backend identity changes', () => {
+    const first = makeSpyBackend(0.7);
+    const second = makeSpyBackend(0.4);
+
+    const { rerender } = renderHook(
+      ({ backend }: { backend: PowerSaverBackend }) =>
+        usePowerSaver({ active: true, backend }),
+      { initialProps: { backend: first.backend } },
+    );
+
+    // Applied via the first backend.
+    expect(first.setBrightness).toHaveBeenCalledWith(DIM_BRIGHTNESS);
+    expect(first.setKeepAwake).toHaveBeenLastCalledWith(true);
+
+    rerender({ backend: second.backend });
+
+    // Previous backend is restored exactly once (no leaked dim / keep-awake).
+    expect(first.setBrightness).toHaveBeenLastCalledWith(0.7);
+    expect(first.setKeepAwake).toHaveBeenLastCalledWith(false);
+    expect(first.setSensorsEnabled).toHaveBeenLastCalledWith(true);
+
+    // The new backend takes over the posture.
+    expect(second.setBrightness).toHaveBeenCalledWith(DIM_BRIGHTNESS);
+    expect(second.setKeepAwake).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not restore the previous backend on an ordinary re-render (stable backend)', () => {
+    const spy = makeSpyBackend(0.7);
+
+    const { rerender } = renderHook(
+      ({ backend }: { backend: PowerSaverBackend }) =>
+        usePowerSaver({ active: true, backend }),
+      { initialProps: { backend: spy.backend } },
+    );
+    spy.setKeepAwake.mockClear();
+
+    // Same backend identity -> no rebuild, no restore, no re-apply.
+    rerender({ backend: spy.backend });
+    rerender({ backend: spy.backend });
+
+    expect(spy.setKeepAwake).not.toHaveBeenCalled();
+  });
+
   it('does not throw with the default no-op backend (no native module)', () => {
     expect(() =>
       renderHook(() => usePowerSaver({ active: true })),
