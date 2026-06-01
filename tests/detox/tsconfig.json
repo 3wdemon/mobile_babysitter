@@ -1,0 +1,12 @@
+{
+  // Scoped TS program for Detox (E2E native) specs. Detox ambient globals
+  // (device, element, by, detox) live ONLY here, so they never leak into the
+  // app program (root tsconfig) or the Node config program (tsconfig.node.json).
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "detox"],
+    "noEmit": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["**/node_modules"]
+}
