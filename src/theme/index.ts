@@ -39,10 +39,32 @@ export interface Theme {
   readonly typography: Typography;
 }
 
-// Compile-time guarantee: both palettes satisfy the shared token contract.
-// If a key is missing or added to only one palette, this fails to compile.
+// Compile-time guarantee: both palettes satisfy the shared token contract
+// (every token is present and is a string).
 const lightColors = LIGHT_COLORS satisfies ColorTokens;
 const darkColors = DARK_COLORS satisfies ColorTokens;
+
+/**
+ * Compile-time assertion that two union types are mutually equal.
+ * Resolves to `true` only when each side extends the other; otherwise `never`.
+ */
+type AssertKeysEqual<A, B> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : never
+  : never;
+
+// Symmetric key-set guarantee. A bare `satisfies ColorTokens` does NOT reject
+// EXCESS keys on a referenced const (only object literals get excess-property
+// checks), so an extra token added to ONLY the dark palette would slip past the
+// type checker. This assertion compares the key sets in BOTH directions, so any
+// divergence (extra/missing key in either palette) is a compile error.
+type _ColorKeysSymmetric = AssertKeysEqual<
+  keyof typeof LIGHT_COLORS,
+  keyof typeof DARK_COLORS
+>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _colorKeysSymmetric: _ColorKeysSymmetric = true;
 
 /** Light (daytime) theme. */
 export const lightTheme: Theme = {
