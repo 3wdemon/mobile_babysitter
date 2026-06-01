@@ -72,6 +72,9 @@ yarn-error.log
 /blob-report/
 /playwright/.cache/
 
+# Detox
+/artifacts/
+
 # Yarn
 .yarn/*
 !.yarn/patches
