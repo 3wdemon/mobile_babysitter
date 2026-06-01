@@ -52,6 +52,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
               fontSize: theme.typography.fontSizes.xxl,
               fontWeight: theme.typography.fontWeights.bold,
               lineHeight: theme.typography.lineHeights.xxl,
+              marginBottom: theme.spacing.sm,
             },
           ]}>
           Mobile Babysitter
@@ -153,9 +154,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {},
-  title: {
-    marginBottom: 8,
-  },
+  title: {},
   subtitle: {},
   card: {
     borderWidth: StyleSheet.hairlineWidth,
