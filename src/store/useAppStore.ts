@@ -46,6 +46,10 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
     // On by default (DMY-12): dim-screen + sensors-off is the expected, safer,
     // lower-power baby-unit posture per product-spec. User can opt out.
     powerSaverEnabled: true,
+    // On by default (DMY-24): audio-only is the lower-power, lower-bandwidth
+    // parent posture (listen continuously, peek at video on demand). User can
+    // opt INTO always-on video.
+    audioOnlyEnabled: true,
   },
   // Free-tier daily usage starts empty; rolls over at local midnight. (DMY-11)
   freeTierUsage: { ...EMPTY_QUOTA },
@@ -100,6 +104,11 @@ export const useAppStore = create<AppState>()(
       setPowerSaverEnabled: enabled =>
         set(state => ({
           settings: { ...state.settings, powerSaverEnabled: enabled },
+        })),
+      // DMY-24: toggle the parent-unit audio-only low-power posture.
+      setAudioOnlyEnabled: enabled =>
+        set(state => ({
+          settings: { ...state.settings, audioOnlyEnabled: enabled },
         })),
       // DMY-11: PLACEHOLDER premium flag. No StoreKit/purchase behind it yet
       // (DMY-27); flips only via this action so the quota wiring is testable.

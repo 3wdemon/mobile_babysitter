@@ -70,6 +70,7 @@ describe('useAppStore', () => {
       biometricLockEnabled: false,
       isPremium: false,
       powerSaverEnabled: true,
+      audioOnlyEnabled: true,
     });
     expect(state.connectionStatus).toBe('idle');
     expect(state.pairedSessionId).toBeNull();
@@ -229,6 +230,7 @@ describe('useAppStore', () => {
         biometricLockEnabled: false,
         isPremium: false,
         powerSaverEnabled: true,
+        audioOnlyEnabled: true,
       });
       expect(restored.connectionStatus).toBe('idle');
     });
@@ -252,6 +254,7 @@ describe('useAppStore', () => {
         biometricLockEnabled: false,
         isPremium: false,
         powerSaverEnabled: true,
+        audioOnlyEnabled: true,
       });
     });
 
@@ -289,6 +292,7 @@ describe('useAppStore', () => {
           biometricLockEnabled: false,
           isPremium: false,
           powerSaverEnabled: true,
+          audioOnlyEnabled: true,
         },
         // reset() returns the counter to the empty default (no day stamped).
         freeTierUsage: { usedMs: 0, dateKey: null },
@@ -395,6 +399,54 @@ describe('useAppStore', () => {
       // Saved fields are preserved.
       expect(restored.settings.theme).toBe('dark');
       expect(restored.role).toBe('baby');
+    });
+  });
+
+  describe('audio-only (DMY-24)', () => {
+    it('defaults to enabled', () => {
+      expect(useAppStore.getState().settings.audioOnlyEnabled).toBe(true);
+    });
+
+    it('setAudioOnlyEnabled toggles the flag', () => {
+      act(() => useAppStore.getState().setAudioOnlyEnabled(false));
+      expect(useAppStore.getState().settings.audioOnlyEnabled).toBe(false);
+      act(() => useAppStore.getState().setAudioOnlyEnabled(true));
+      expect(useAppStore.getState().settings.audioOnlyEnabled).toBe(true);
+    });
+
+    it('persists the audio-only setting across a simulated restart', () => {
+      act(() => useAppStore.getState().setAudioOnlyEnabled(false));
+      const restored = restartAndGetState();
+      expect(restored.settings.audioOnlyEnabled).toBe(false);
+    });
+
+    it('backfills the default for an older blob without audioOnlyEnabled', () => {
+      // Simulate a pre-DMY-24 persisted shape: settings present but missing the
+      // new flag. The defensive merge must backfill it to the default (true)
+      // rather than leaving `undefined`.
+      seedPersistedRaw(
+        JSON.stringify({
+          state: {
+            role: 'parent',
+            onboardingCompleted: true,
+            settings: {
+              theme: 'dark',
+              alertSoundsEnabled: true,
+              noiseThreshold: 0.6,
+              biometricLockEnabled: false,
+              isPremium: false,
+              powerSaverEnabled: true,
+            },
+            freeTierUsage: { usedMs: 0, dateKey: null },
+          },
+          version: 0,
+        }),
+      );
+      const restored = restartAndGetState();
+      expect(restored.settings.audioOnlyEnabled).toBe(true);
+      // Saved fields are preserved.
+      expect(restored.settings.theme).toBe('dark');
+      expect(restored.role).toBe('parent');
     });
   });
 
