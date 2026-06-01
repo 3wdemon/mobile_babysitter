@@ -1,37 +1,27 @@
 /**
  * @format
+ *
+ * Smoke test for the app shell: App now mounts a NavigationContainer with the
+ * RootNavigator. The "Mobile Babysitter" title moved into PairingScreen (the
+ * initial route), so the smoke assertion checks that route renders.
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react-native';
+import { render, screen, waitFor } from '@testing-library/react-native';
 import App from '../App';
 
-// SafeAreaProvider waits for a native layout event before rendering its
-// children, which never fires in the test environment. Mock the module so the
-// provider renders synchronously and exposes static insets, letting the app
-// tree mount.
-jest.mock('react-native-safe-area-context', () => {
-  const inset = { top: 47, right: 0, bottom: 34, left: 0 };
-  const frame = { width: 390, height: 844, x: 0, y: 0 };
-  return {
-    SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
-    SafeAreaConsumer: ({
-      children,
-    }: {
-      children: (insets: typeof inset) => React.ReactNode;
-    }) => children(inset),
-    SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
-    useSafeAreaInsets: () => inset,
-    useSafeAreaFrame: () => frame,
-  };
-});
+// react-native-safe-area-context and react-native-screens are mocked globally
+// in jest.setup.js so the navigation tree mounts in the test renderer.
 
 test('renders without crashing', () => {
   expect(() => render(<App />)).not.toThrow();
 });
 
-test('renders the "Mobile Babysitter" title', () => {
+test('renders the initial Pairing route with the app title', async () => {
   render(<App />);
 
-  expect(screen.getByText('Mobile Babysitter')).toBeOnTheScreen();
+  // The title now lives on the initial PairingScreen.
+  await waitFor(() => {
+    expect(screen.getAllByText('Mobile Babysitter').length).toBeGreaterThan(0);
+  });
 });
