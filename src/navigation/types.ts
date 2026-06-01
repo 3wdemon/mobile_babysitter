@@ -19,7 +19,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
  * `undefined` when the route takes no params.
  */
 export type RootStackParamList = {
-  /** Mode-selection / pairing entry point (initial route). */
+  /** Onboarding flow (nested stack), shown until onboarding is completed. */
+  Onboarding: undefined;
+  /** Mode-selection / pairing entry point. */
   Pairing: undefined;
   /** Baby unit (camera/mic streaming side). */
   Baby: undefined;

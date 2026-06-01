@@ -2,6 +2,25 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Baby-monitor runtime permissions (DMY-42). Requested on the onboarding
+      Permissions screen via react-native-permissions:
+        CAMERA            — live video of the baby, streamed P2P / E2E encrypted.
+        RECORD_AUDIO      — two-way audio + on-device cry detection.
+        POST_NOTIFICATIONS — background cry/motion alerts (Android 13+, API 33).
+      All media stays on-device / peer-to-peer; nothing is uploaded to a cloud.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature
+      android:name="android.hardware.camera"
+      android:required="false" />
+    <uses-feature
+      android:name="android.hardware.microphone"
+      android:required="false" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

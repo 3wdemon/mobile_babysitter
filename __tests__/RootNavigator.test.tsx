@@ -15,9 +15,26 @@ import { NavigationContainer, type NavigationContainerRef } from '@react-navigat
 
 import RootNavigator from '../src/navigation/RootNavigator';
 import type { RootStackParamList } from '../src/navigation/types';
+import { useAppStore } from '../src/store/useAppStore';
+
+const { __resetAllMmkv } = jest.requireMock('react-native-mmkv') as {
+  __resetAllMmkv: () => void;
+};
 
 // react-native-safe-area-context and react-native-screens are mocked globally
 // in jest.setup.js so the navigation tree mounts in the test renderer.
+
+// The RootNavigator now gates on `onboardingCompleted` (DMY-42). These tests
+// exercise the MAIN flow (Pairing/Baby/Parent), so we mark onboarding complete
+// (with no role -> Pairing is the initial route) before each test. Onboarding
+// gating itself is covered in src/features/onboarding/__tests__.
+beforeEach(() => {
+  __resetAllMmkv();
+  act(() => {
+    useAppStore.getState().reset();
+    useAppStore.getState().completeOnboarding();
+  });
+});
 
 function renderNavigator() {
   const ref = React.createRef<NavigationContainerRef<RootStackParamList>>();

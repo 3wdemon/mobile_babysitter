@@ -8,11 +8,25 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# react-native-permissions (DMY-42): opt in ONLY to the permission handlers we
+# actually request — Camera and Microphone for the WebRTC baby-monitor stream,
+# Notifications for background cry/motion alerts. Each handler is a separate pod,
+# so unused ones (and their privacy-sensitive frameworks) are not linked, which
+# keeps the binary smaller and avoids App Store review questions about
+# capabilities we don't use.
+permissions_path = File.join(
+  File.dirname(`node --print "require.resolve('react-native-permissions/package.json')"`.strip),
+  'scripts/setup.rb',
+)
+require permissions_path
+
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
   use_frameworks! :linkage => linkage.to_sym
 end
+
+setup_permissions(%w[Camera Microphone Notifications])
 
 target 'MobileBabysitter' do
   config = use_native_modules!
