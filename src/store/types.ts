@@ -37,16 +37,26 @@ export type ThemePreference = 'system' | 'light' | 'dark';
  *    ICE) lands in DMY-16/18 and will drive the status onward to
  *    `connecting` -> `connected`. We deliberately do NOT fake `connected` on a
  *    successful scan. (DMY-14)
- *  - `connecting`   — signalling/ICE in progress (DMY-16/18).
- *  - `connected`    — live P2P media session.
- *  - `disconnected` — a previously-established session dropped.
+ *  - `connecting`   — signalling/ICE in progress (DMY-16): the SDP offer/answer
+ *    exchange and ICE negotiation are underway but the peer connection has not
+ *    reached `connected` yet. Driven by real `RTCPeerConnection` connection-state
+ *    events, not faked.
+ *  - `connected`    — live P2P media session (peer connection reached the
+ *    `connected` connection-state).
+ *  - `disconnected` — a previously-established session dropped (peer connection
+ *    transitioned to `disconnected`/`closed`).
+ *  - `failed`       — signalling/ICE negotiation failed (peer connection reached
+ *    the `failed` connection-state, or signalling errored). Distinct from
+ *    `disconnected`: nothing was ever established. Surfaced from real
+ *    `RTCPeerConnection` events (DMY-16), never faked.
  */
 export type ConnectionStatus =
   | 'idle'
   | 'paired'
   | 'connecting'
   | 'connected'
-  | 'disconnected';
+  | 'disconnected'
+  | 'failed';
 
 /**
  * User-configurable, persisted settings.

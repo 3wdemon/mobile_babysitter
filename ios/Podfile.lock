@@ -3,6 +3,7 @@ PODS:
   - hermes-engine (250829098.0.10):
     - hermes-engine/Pre-built (= 250829098.0.10)
   - hermes-engine/Pre-built (250829098.0.10)
+  - JitsiWebRTC (124.0.2)
   - MMKVCore (2.4.0)
   - NitroImage (0.15.0):
     - hermes-engine
@@ -1568,6 +1569,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-webrtc (124.0.7):
+    - JitsiWebRTC (~> 124.0.0)
+    - React-Core
   - react-native-zeroconf (0.14.0):
     - React-Core
   - React-NativeModulesApple (0.85.3):
@@ -2165,6 +2169,7 @@ DEPENDENCIES:
   - react-native-biometrics (from `../node_modules/react-native-biometrics`)
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - react-native-webrtc (from `../node_modules/react-native-webrtc`)
   - react-native-zeroconf (from `../node_modules/react-native-zeroconf`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
@@ -2209,6 +2214,7 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - JitsiWebRTC
     - MMKVCore
 
 EXTERNAL SOURCES:
@@ -2303,6 +2309,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-get-random-values"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-webrtc:
+    :path: "../node_modules/react-native-webrtc"
   react-native-zeroconf:
     :path: "../node_modules/react-native-zeroconf"
   React-NativeModulesApple:
@@ -2389,6 +2397,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: 39c74684f24fa0272cf90a20097ee6caf8d9c010
+  JitsiWebRTC: b47805ab5668be38e7ee60e2258f49badfe8e1d0
   MMKVCore: 3d16ce9f7d411e135020915fde98a056859a1efa
   NitroImage: 33c4698f86b081bd3d0245223f34ea561b0934ea
   NitroMmkv: 4b4f95387a15161b346a6a93b9c7072c179e0e88
@@ -2433,6 +2442,7 @@ SPEC CHECKSUMS:
   react-native-biometrics: 43ed5b828646a7862dbc7945556446be00798e7d
   react-native-get-random-values: 68792987aef40e8aa72dc448d97e009d1f440c88
   react-native-safe-area-context: fb5c8ee9f6dd62ef710611b3d370c501f42a4ac0
+  react-native-webrtc: e8f0ce746353adc2744a2b933645e1aeb41eaa74
   react-native-zeroconf: eb2e5584308f20f5fc3eb0cea2ceafbbd345b48b
   React-NativeModulesApple: deba264b03bd79c6bd61014fa30e40321b5e443a
   React-networking: 35e6070b084f435429f85c5db40b4d5b38652fe9
