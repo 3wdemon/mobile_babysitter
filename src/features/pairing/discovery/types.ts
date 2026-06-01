@@ -25,8 +25,9 @@
  *
  * It carries NO account identifiers, NO long-lived secrets, NO SDP/ICE, and NO
  * personal data. The session id is NOT a secret in the cryptographic sense (it
- * is also shown in the QR), but the redactor still masks it in logs so we never
- * print it in the clear (defence-in-depth, matching the QR path).
+ * is also shown in the QR), but the redactor still masks `sessionId` in logs
+ * (an exact redactor key) so we never print it in the clear (defence-in-depth,
+ * matching the QR path).
  *
  * ## Honest scope
  * Discovery surfaces a baby-unit's name/host/port + its session id. It does NOT

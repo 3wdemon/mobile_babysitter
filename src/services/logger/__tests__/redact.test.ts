@@ -60,6 +60,47 @@ describe('redact', () => {
     });
   });
 
+  describe('sessionId (exact key, defence-in-depth)', () => {
+    it('redacts sessionId / sessionID / session_id', () => {
+      const input = {
+        sessionId: 'abc-123',
+        sessionID: 'def-456',
+        session_id: 'ghi-789',
+      };
+      const result = redact(input) as Record<string, unknown>;
+      expect(result.sessionId).toBe(REDACTED);
+      expect(result.sessionID).toBe(REDACTED);
+      expect(result.session_id).toBe(REDACTED);
+      expect(JSON.stringify(result)).not.toContain('abc-123');
+      expect(JSON.stringify(result)).not.toContain('def-456');
+      expect(JSON.stringify(result)).not.toContain('ghi-789');
+    });
+
+    it('matches sessionId variants via isSensitiveKey directly', () => {
+      expect(isSensitiveKey('sessionId')).toBe(true);
+      expect(isSensitiveKey('sessionID')).toBe(true);
+      expect(isSensitiveKey('session_id')).toBe(true);
+    });
+
+    it('does NOT over-redact broad session-prefixed diagnostic fields', () => {
+      const input = {
+        sessionActive: true,
+        sessionStartTime: 123,
+        session: 'living-room',
+      };
+      const result = redact(input) as Record<string, unknown>;
+      expect(result.sessionActive).toBe(true);
+      expect(result.sessionStartTime).toBe(123);
+      expect(result.session).toBe('living-room');
+    });
+
+    it('keeps bare `session` non-sensitive via isSensitiveKey', () => {
+      expect(isSensitiveKey('session')).toBe(false);
+      expect(isSensitiveKey('sessionActive')).toBe(false);
+      expect(isSensitiveKey('sessionStartTime')).toBe(false);
+    });
+  });
+
   describe('pattern keys', () => {
     it('redacts camelCase / snake_case / kebab variants', () => {
       const input = {

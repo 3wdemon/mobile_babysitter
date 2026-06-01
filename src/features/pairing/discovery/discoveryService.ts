@@ -20,9 +20,10 @@
  * signalling handshake (DMY-16/18) — it does NOT itself connect.
  *
  * ## Privacy
- * Logs only coarse, non-PII facts. The session id IS logged through the
- * project logger, which masks it (the redactor treats short ids defensively);
- * we also avoid printing host/port and never log the raw TXT map verbatim.
+ * Logs only coarse, non-PII facts. The session id is logged through the
+ * redacting logger, which masks `sessionId` (an exact redactor key), so it
+ * never prints in the clear; we also avoid printing host/port and never log
+ * the raw TXT map verbatim.
  */
 import { logger } from '../../../services/logger';
 import { isValidSessionId } from '../pairingService';
@@ -238,7 +239,7 @@ export class DiscoveryService {
           return;
         }
         this.units.set(unit.name, unit);
-        // sessionId is masked by the logger; host/port intentionally omitted.
+        // sessionId is masked by the redacting logger; host/port omitted.
         logger.info('discovery: baby-unit resolved', {
           sessionId: unit.sessionId,
         });

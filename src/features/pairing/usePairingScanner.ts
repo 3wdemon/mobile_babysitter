@@ -130,7 +130,7 @@ export function usePairingScanner(now?: () => number): UsePairingScanner {
       }
 
       lockedRef.current = true;
-      // sessionId is masked by the logger.
+      // sessionId is masked by the redacting logger (exact redactor key).
       logger.info('pairing: parent paired via local discovery', {
         sessionId: id,
       });
