@@ -56,3 +56,9 @@ jest.mock('react-native-screens', () => {
 // fallback. Use the manual mock in __mocks__/react-native-permissions.ts so any
 // test that mounts the onboarding flow gets a working, overridable stub.
 jest.mock('react-native-permissions');
+
+// react-native-qrcode-svg (DMY-6) renders through react-native-svg, a native
+// module with no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-qrcode-svg.tsx so the baby-unit pairing screen mounts
+// and exposes the encoded value for assertions.
+jest.mock('react-native-qrcode-svg');
