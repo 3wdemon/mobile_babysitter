@@ -183,6 +183,22 @@ describe('DiscoveryService — scanning (parent)', () => {
     expect(service.getUnits()).toEqual([]);
   });
 
+  it('dedups: re-resolving the same instance updates in place (no duplicate)', () => {
+    const fake = createFakeBackend();
+    const service = createDiscoveryService(fake.backend);
+    const sid = generateSessionId();
+
+    service.startScanning();
+    fake.emitResolved(resolvedService(sid, { host: '192.168.1.10' }));
+    fake.emitResolved(resolvedService(sid, { host: '192.168.1.20' }));
+
+    const units = service.getUnits();
+    // Same Bonjour instance name -> single entry, latest host wins.
+    expect(units).toHaveLength(1);
+    expect(units[0].sessionId).toBe(sid);
+    expect(units[0].host).toBe('192.168.1.20');
+  });
+
   it('ignores a resolved event for a foreign/corrupt service', () => {
     const fake = createFakeBackend();
     const service = createDiscoveryService(fake.backend);
