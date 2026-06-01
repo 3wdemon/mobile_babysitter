@@ -365,6 +365,89 @@ describe('SignalingSession handshake', () => {
     responder.stop();
   });
 
+  it('glare: an initiator ignores an unexpected inbound offer (no crash, no remote desc)', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const initiatorPc = new MockPeerConnection();
+    const initiator = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => initiatorPc,
+    });
+    await initiator.start();
+    await b.connect();
+    await flush();
+    initiatorPc.createOffer.mockClear();
+
+    // Peer (responder) sends an offer too — a glare collision. The initiator
+    // must ignore it (it is the offerer) rather than apply it or crash.
+    b.send({
+      type: 'offer',
+      sessionId: SID,
+      from: 'responder',
+      description: { type: 'offer', sdp: 'glare-offer' },
+    });
+    await flush();
+
+    expect(initiatorPc.setRemoteDescription).not.toHaveBeenCalledWith({
+      type: 'offer',
+      sdp: 'glare-offer',
+    });
+    expect(initiator.getStatus()).not.toBe('failed');
+    initiator.stop();
+  });
+
+  it('a responder ignores an unexpected inbound answer (no crash)', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const responderPc = new MockPeerConnection();
+    const responder = createSignalingSession({
+      role: 'responder',
+      sessionId: SID,
+      transport: b,
+      createPeerConnection: () => responderPc,
+    });
+    await responder.start();
+    await a.connect();
+    await flush();
+
+    a.send({
+      type: 'answer',
+      sessionId: SID,
+      from: 'initiator',
+      description: { type: 'answer', sdp: 'stray-answer' },
+    });
+    await flush();
+
+    expect(responderPc.setRemoteDescription).not.toHaveBeenCalled();
+    expect(responder.getStatus()).not.toBe('failed');
+    responder.stop();
+  });
+
+  it('a peer "bye" moves the session to disconnected without tearing down as failed', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const initiatorPc = new MockPeerConnection();
+    const statuses: SignalingSessionStatus[] = [];
+    const initiator = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => initiatorPc,
+      onStatusChange: s => statuses.push(s),
+    });
+    await initiator.start();
+    await b.connect();
+    await flush();
+
+    // Peer hangs up politely.
+    b.send({ type: 'bye', sessionId: SID, from: 'responder' });
+    await flush();
+
+    expect(initiator.getStatus()).toBe('disconnected');
+    expect(statuses).toContain('disconnected');
+    expect(statuses).not.toContain('failed');
+    initiator.stop();
+  });
+
   it('forwards a remote track to onRemoteTrack', async () => {
     const { a } = createLoopbackTransportPair();
     const pc = new MockPeerConnection();
