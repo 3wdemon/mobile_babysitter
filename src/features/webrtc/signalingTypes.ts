@@ -199,12 +199,6 @@ export interface PeerConnection {
    * underlying connection does not support `addTrack`.
    */
   addAudioTrack(track: MediaStreamTrackLike, stream: MediaStreamLike): void;
-  /**
-   * Direction the local description's media is negotiated with: the latest
-   * local SDP, used to assert the media is carried over an encrypted SRTP
-   * profile (DTLS-SRTP). `null` before any local description has been set.
-   */
-  getLocalSdp(): string | null;
   /** Subscribe to a wrapper event. Returns an unsubscribe function. */
   on<K extends keyof PeerConnectionEvents>(
     event: K,

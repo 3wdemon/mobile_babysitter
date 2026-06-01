@@ -162,7 +162,6 @@ export function createPeerConnection(
   };
 
   let remoteDescriptionSet = false;
-  let localSdp: string | null = null;
   let lastState: PeerConnectionState = normalizePeerState(pc.connectionState);
   let closed = false;
 
@@ -226,7 +225,6 @@ export function createPeerConnection(
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       const sdp = toSignalingSdp(offer, 'offer');
-      localSdp = sdp.sdp;
       logger.info('webrtc: offer created');
       return sdp;
     },
@@ -235,7 +233,6 @@ export function createPeerConnection(
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       const sdp = toSignalingSdp(answer, 'answer');
-      localSdp = sdp.sdp;
       logger.info('webrtc: answer created');
       return sdp;
     },
@@ -253,10 +250,6 @@ export function createPeerConnection(
       } catch {
         logger.warn('webrtc: failed to add local audio track');
       }
-    },
-
-    getLocalSdp(): string | null {
-      return localSdp;
     },
 
     async setRemoteDescription(description: SignalingSdp): Promise<void> {

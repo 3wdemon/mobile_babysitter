@@ -42,7 +42,6 @@ const SRTP_SDP =
 class MockPeerConnection implements PeerConnection {
   state: PeerConnectionState = 'new';
   remoteSet = false;
-  localSdp: string | null = null;
   readonly addedTracks: Array<{
     track: MediaStreamTrackLike;
     stream: MediaStreamLike;
@@ -55,11 +54,9 @@ class MockPeerConnection implements PeerConnection {
     track: new Set(),
   };
   createOffer = jest.fn(async (): Promise<SignalingSdp> => {
-    this.localSdp = SRTP_SDP;
     return { type: 'offer', sdp: SRTP_SDP };
   });
   createAnswer = jest.fn(async (): Promise<SignalingSdp> => {
-    this.localSdp = SRTP_SDP;
     return { type: 'answer', sdp: SRTP_SDP };
   });
   setRemoteDescription = jest.fn(async () => {
@@ -71,7 +68,6 @@ class MockPeerConnection implements PeerConnection {
       this.addedTracks.push({ track, stream });
     },
   );
-  getLocalSdp = jest.fn((): string | null => this.localSdp);
   on<K extends keyof PeerConnectionEvents>(
     event: K,
     handler: PeerConnectionEvents[K],

@@ -61,7 +61,6 @@ class MockPeerConnection implements PeerConnection {
   });
 
   addAudioTrack = jest.fn();
-  getLocalSdp = jest.fn((): string | null => null);
 
   on<K extends keyof PeerConnectionEvents>(
     event: K,

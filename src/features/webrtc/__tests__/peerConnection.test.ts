@@ -210,22 +210,6 @@ describe('createPeerConnection', () => {
     ).not.toThrow();
   });
 
-  it('getLocalSdp returns null until a local description is set, then the SDP', async () => {
-    const { Ctor } = makeCtor();
-    const pc = createPeerConnection(undefined, Ctor);
-    expect(pc.getLocalSdp()).toBeNull();
-    await pc.createOffer();
-    // The fake returns sdp 'O' for the offer.
-    expect(pc.getLocalSdp()).toBe('O');
-  });
-
-  it('getLocalSdp reflects the answer SDP for a responder', async () => {
-    const { Ctor } = makeCtor();
-    const pc = createPeerConnection(undefined, Ctor);
-    await pc.createAnswer();
-    expect(pc.getLocalSdp()).toBe('A');
-  });
-
   it('an unsubscribed handler stops receiving events', () => {
     const { Ctor, instances } = makeCtor();
     const pc = createPeerConnection(undefined, Ctor);
