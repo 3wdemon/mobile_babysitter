@@ -35,19 +35,45 @@ export {
   createLoopbackTransportPair,
   createLocalSocketTransport,
 } from './signalingTransport';
-export {
-  SignalingSession,
-  createSignalingSession,
-} from './signalingSession';
+export { SignalingSession, createSignalingSession } from './signalingSession';
 export type {
   SignalingSessionStatus,
   SignalingSessionOptions,
 } from './signalingSession';
 export { useSignaling } from './useSignaling';
+export type { UseSignalingOptions, UseSignalingState } from './useSignaling';
+
+// --- Audio stream: baby→parent over WebRTC, DTLS-SRTP (DMY-18) -----------
+// One-way audio capture/publish (baby) + remote-track playback (parent) on top
+// of the signalling handshake. Microphone capture is real (against the injected
+// mediaDevices); audio ROUTING (loud speaker / background VoIP session) is the
+// AudioPlayback integration point and lands with the in-call work (DMY-9) — the
+// shipped default is a safe no-op. Media is encrypted by WebRTC's DTLS-SRTP and
+// cannot be disabled; assertEncryptedMediaProfile confirms the SRTP profile.
+export {
+  getLocalAudioStream,
+  stopStream,
+  setStreamAudioEnabled,
+  audioTracksOf,
+  extractRemoteAudioStream,
+  assertEncryptedMediaProfile,
+  AUDIO_ONLY_CONSTRAINTS,
+} from './audioStream';
+export { noopAudioPlayback, createSafeAudioPlayback } from './audioPlayback';
+export { useAudioStream } from './useAudioStream';
+export type { AudioPlayback } from './audioPlayback';
 export type {
-  UseSignalingOptions,
-  UseSignalingState,
-} from './useSignaling';
+  UseAudioStreamOptions,
+  UseAudioStreamState,
+} from './useAudioStream';
+export type {
+  MediaStreamLike,
+  MediaStreamTrackLike,
+  MediaDevicesLike,
+  MediaStreamConstraints,
+  TrackEventLike,
+  MediaEncryptionProfile,
+} from './mediaTypes';
 export type {
   SignalingRole,
   SignalingMessage,
@@ -62,6 +88,4 @@ export type {
   PeerConnectionConfig,
   RtcIceServer,
 } from './signalingTypes';
-export type {
-  LocalSocketTransportConfig,
-} from './signalingTransport';
+export type { LocalSocketTransportConfig } from './signalingTransport';

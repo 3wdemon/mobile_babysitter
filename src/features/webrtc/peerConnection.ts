@@ -33,6 +33,7 @@
  * is ever logged directly.
  */
 import { logger } from '../../services/logger';
+import type { MediaStreamLike, MediaStreamTrackLike } from './mediaTypes';
 import type {
   PeerConnection,
   PeerConnectionConfig,
@@ -61,6 +62,12 @@ export interface RtcPeerConnectionLike {
   setLocalDescription(description: unknown): Promise<void>;
   setRemoteDescription(description: unknown): Promise<void>;
   addIceCandidate(candidate: unknown): Promise<void>;
+  /**
+   * Publish a local track (with its stream) so it is sent to the peer. Present
+   * on react-native-webrtc's `RTCPeerConnection`; optional here so a minimal
+   * mock that does not exercise the media path need not implement it.
+   */
+  addTrack?(track: unknown, stream: unknown): unknown;
   close(): void;
   connectionState?: string;
   // Event handler slots (assigned, not addEventListener, to match RN-WebRTC).
@@ -74,9 +81,9 @@ export interface RtcPeerConnectionLike {
 }
 
 /** Constructor signature for the (native or mock) peer connection. */
-export type RtcPeerConnectionCtor = new (
-  config: { iceServers: RtcIceServer[] },
-) => RtcPeerConnectionLike;
+export type RtcPeerConnectionCtor = new (config: {
+  iceServers: RtcIceServer[];
+}) => RtcPeerConnectionLike;
 
 /**
  * Lazily resolve the real react-native-webrtc `RTCPeerConnection` constructor.
@@ -102,7 +109,9 @@ function resolveNativeCtor(): RtcPeerConnectionCtor | null {
  * (values: new/checking/connected/completed/disconnected/failed/closed) on
  * platforms where `connectionState` lags, so we normalise both.
  */
-export function normalizePeerState(raw: string | undefined): PeerConnectionState {
+export function normalizePeerState(
+  raw: string | undefined,
+): PeerConnectionState {
   switch (raw) {
     case 'connecting':
     case 'checking':
@@ -153,6 +162,7 @@ export function createPeerConnection(
   };
 
   let remoteDescriptionSet = false;
+  let localSdp: string | null = null;
   let lastState: PeerConnectionState = normalizePeerState(pc.connectionState);
   let closed = false;
 
@@ -204,9 +214,10 @@ export function createPeerConnection(
     desc: { type?: string; sdp?: string },
     fallbackType: 'offer' | 'answer',
   ): SignalingSdp {
-    const type = desc.type === 'offer' || desc.type === 'answer'
-      ? desc.type
-      : fallbackType;
+    const type =
+      desc.type === 'offer' || desc.type === 'answer'
+        ? desc.type
+        : fallbackType;
     return { type, sdp: desc.sdp ?? '' };
   }
 
@@ -214,15 +225,38 @@ export function createPeerConnection(
     async createOffer(): Promise<SignalingSdp> {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      const sdp = toSignalingSdp(offer, 'offer');
+      localSdp = sdp.sdp;
       logger.info('webrtc: offer created');
-      return toSignalingSdp(offer, 'offer');
+      return sdp;
     },
 
     async createAnswer(): Promise<SignalingSdp> {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      const sdp = toSignalingSdp(answer, 'answer');
+      localSdp = sdp.sdp;
       logger.info('webrtc: answer created');
-      return toSignalingSdp(answer, 'answer');
+      return sdp;
+    },
+
+    addAudioTrack(track: MediaStreamTrackLike, stream: MediaStreamLike): void {
+      if (typeof pc.addTrack !== 'function') {
+        // A minimal connection without media support: nothing to publish.
+        logger.warn('webrtc: addTrack unsupported; audio track not published');
+        return;
+      }
+      try {
+        pc.addTrack(track, stream);
+        // Coarse, non-PII fact only — no track ids / media content.
+        logger.info('webrtc: local audio track added (sendonly)');
+      } catch {
+        logger.warn('webrtc: failed to add local audio track');
+      }
+    },
+
+    getLocalSdp(): string | null {
+      return localSdp;
     },
 
     async setRemoteDescription(description: SignalingSdp): Promise<void> {

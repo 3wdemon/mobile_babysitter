@@ -26,9 +26,11 @@ import type { ConnectionStatus } from '../../store/types';
 import { createSignalingSession, SignalingSession } from './signalingSession';
 import type { SignalingSessionStatus } from './signalingSession';
 import type {
+  PeerConnection,
   PeerConnectionConfig,
   PeerConnectionFactory,
   SignalingRole,
+  SignalingSdp,
   SignalingTransport,
 } from './signalingTypes';
 
@@ -50,6 +52,17 @@ export interface UseSignalingOptions {
   readonly peerConfig?: PeerConnectionConfig;
   /** Called when a remote media track arrives (for the media layer, DMY-17). */
   readonly onRemoteTrack?: (event: unknown) => void;
+  /**
+   * Called with the local SDP right after it is created (DMY-18). The audio
+   * layer uses it to assert the DTLS-SRTP encrypted-media profile.
+   */
+  readonly onLocalDescription?: (description: SignalingSdp) => void;
+  /**
+   * Called once the peer connection exists, before any offer/answer (DMY-18).
+   * The audio layer uses it to publish the baby-unit's local audio track.
+   * Awaited inside the session so capture completes before negotiation.
+   */
+  readonly onPeerConnection?: (pc: PeerConnection) => void | Promise<void>;
   /**
    * Auto-start the handshake when paired + a transport is present. Defaults to
    * `true`. Set `false` to drive `start`/`stop` manually.
@@ -101,6 +114,8 @@ export function useSignaling(
     createPeerConnection,
     peerConfig,
     onRemoteTrack,
+    onLocalDescription,
+    onPeerConnection,
     autoStart = true,
   } = options;
 
@@ -121,6 +136,10 @@ export function useSignaling(
   setConnectionStatusRef.current = setConnectionStatus;
   const onRemoteTrackRef = useRef(onRemoteTrack);
   onRemoteTrackRef.current = onRemoteTrack;
+  const onLocalDescriptionRef = useRef(onLocalDescription);
+  onLocalDescriptionRef.current = onLocalDescription;
+  const onPeerConnectionRef = useRef(onPeerConnection);
+  onPeerConnectionRef.current = onPeerConnection;
   const roleRef = useRef(role);
   roleRef.current = role;
   const transportRef = useRef(transport);
@@ -163,6 +182,10 @@ export function useSignaling(
         setConnectionStatusRef.current(statusToConnectionStatus(next));
       },
       onRemoteTrack: event => onRemoteTrackRef.current?.(event),
+      onLocalDescription: (description: SignalingSdp) =>
+        onLocalDescriptionRef.current?.(description),
+      onPeerConnection: (pc: PeerConnection) =>
+        onPeerConnectionRef.current?.(pc),
     });
     sessionRef.current = session;
     setIsActive(true);

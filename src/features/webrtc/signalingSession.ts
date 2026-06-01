@@ -33,9 +33,7 @@
  * `sdp`/`candidate` keys.
  */
 import { logger } from '../../services/logger';
-import {
-  createPeerConnection as defaultCreatePeerConnection,
-} from './peerConnection';
+import { createPeerConnection as defaultCreatePeerConnection } from './peerConnection';
 import type {
   PeerConnection,
   PeerConnectionConfig,
@@ -79,6 +77,23 @@ export interface SignalingSessionOptions {
   readonly onStatusChange?: (status: SignalingSessionStatus) => void;
   /** Called when a remote media track arrives (for the media layer, DMY-17). */
   readonly onRemoteTrack?: (event: unknown) => void;
+  /**
+   * Called with the local SDP immediately after it is created (offer or
+   * answer) (DMY-18). The audio layer uses it to assert the negotiated media is
+   * carried over an encrypted DTLS-SRTP profile. The SDP is sensitive metadata
+   * and is NEVER logged raw.
+   */
+  readonly onLocalDescription?: (description: SignalingSdp) => void;
+  /**
+   * Called once the peer connection has been created, BEFORE any
+   * offer/answer is generated (DMY-18). The audio layer uses this seam to
+   * publish the baby-unit's local audio track onto the connection so the audio
+   * m-line is part of the initial negotiation. Awaited so capture (which may
+   * prompt for the mic) completes before the offer/answer is built. Total: a
+   * thrown/rejected hook fails the session (we cannot negotiate media we could
+   * not capture).
+   */
+  readonly onPeerConnection?: (pc: PeerConnection) => void | Promise<void>;
 }
 
 /** Map a {@link PeerConnectionState} onto the session status. */
@@ -111,6 +126,10 @@ export class SignalingSession {
   private readonly peerConfig?: PeerConnectionConfig;
   private readonly onStatusChange?: (status: SignalingSessionStatus) => void;
   private readonly onRemoteTrack?: (event: unknown) => void;
+  private readonly onLocalDescription?: (description: SignalingSdp) => void;
+  private readonly onPeerConnection?: (
+    pc: PeerConnection,
+  ) => void | Promise<void>;
 
   private pc: PeerConnection | null = null;
   private status: SignalingSessionStatus = 'idle';
@@ -133,6 +152,8 @@ export class SignalingSession {
     this.peerConfig = options.peerConfig;
     this.onStatusChange = options.onStatusChange;
     this.onRemoteTrack = options.onRemoteTrack;
+    this.onLocalDescription = options.onLocalDescription;
+    this.onPeerConnection = options.onPeerConnection;
   }
 
   /** Current high-level status. */
@@ -171,12 +192,20 @@ export class SignalingSession {
       this.wirePeerConnection(pc);
       this.wireTransport();
 
+      // Publish local media (baby-unit audio) BEFORE the offer/answer so the
+      // audio m-line is in the initial negotiation (DMY-18). Awaited: capture
+      // may prompt for the mic and must finish first.
+      if (this.onPeerConnection) {
+        await this.onPeerConnection(pc);
+      }
+
       await this.transport.connect();
 
       // Initiator drives: create + send the offer immediately. The responder
       // waits for the inbound offer (handled in onMessage).
       if (this.role === 'initiator') {
         const offer = await pc.createOffer();
+        this.emitLocalDescription(offer);
         this.send({
           type: 'offer',
           sessionId: this.sessionId,
@@ -293,6 +322,7 @@ export class SignalingSession {
     await pc.setRemoteDescription(description);
     await this.flushPendingIce();
     const answer = await pc.createAnswer();
+    this.emitLocalDescription(answer);
     this.send({
       type: 'answer',
       sessionId: this.sessionId,
@@ -348,6 +378,14 @@ export class SignalingSession {
         // One bad candidate must not abort the rest of the flush.
         logger.warn('webrtc/signaling: failed to add buffered ICE candidate');
       }
+    }
+  }
+
+  private emitLocalDescription(description: SignalingSdp): void {
+    try {
+      this.onLocalDescription?.(description);
+    } catch {
+      // A diagnostic subscriber must never break the session.
     }
   }
 

@@ -34,6 +34,7 @@ class FakeRtcPeerConnection implements RtcPeerConnectionLike {
   setLocalDescription = jest.fn(async () => {});
   setRemoteDescription = jest.fn(async () => {});
   addIceCandidate = jest.fn(async () => {});
+  addTrack = jest.fn();
   close = jest.fn(() => {
     this.connectionState = 'closed';
   });
@@ -175,6 +176,54 @@ describe('createPeerConnection', () => {
     pc.on('track', e => tracks.push(e));
     instances[0].ontrack?.({ streams: ['s'] });
     expect(tracks).toEqual([{ streams: ['s'] }]);
+  });
+
+  it('addAudioTrack publishes the track+stream onto the native connection (DMY-18)', () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    const track = { kind: 'audio', enabled: true, stop: jest.fn() };
+    const stream = { getTracks: () => [track] };
+    pc.addAudioTrack(track, stream);
+    expect(instances[0].addTrack).toHaveBeenCalledWith(track, stream);
+  });
+
+  it('addAudioTrack is safe when the native connection has no addTrack', () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    // Simulate a minimal native connection without media support.
+    (instances[0] as { addTrack?: unknown }).addTrack = undefined;
+    const track = { kind: 'audio', enabled: true, stop: jest.fn() };
+    expect(() =>
+      pc.addAudioTrack(track, { getTracks: () => [track] }),
+    ).not.toThrow();
+  });
+
+  it('addAudioTrack does not throw if native addTrack throws', () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    instances[0].addTrack = jest.fn(() => {
+      throw new Error('boom');
+    });
+    const track = { kind: 'audio', enabled: true, stop: jest.fn() };
+    expect(() =>
+      pc.addAudioTrack(track, { getTracks: () => [track] }),
+    ).not.toThrow();
+  });
+
+  it('getLocalSdp returns null until a local description is set, then the SDP', async () => {
+    const { Ctor } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    expect(pc.getLocalSdp()).toBeNull();
+    await pc.createOffer();
+    // The fake returns sdp 'O' for the offer.
+    expect(pc.getLocalSdp()).toBe('O');
+  });
+
+  it('getLocalSdp reflects the answer SDP for a responder', async () => {
+    const { Ctor } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    await pc.createAnswer();
+    expect(pc.getLocalSdp()).toBe('A');
   });
 
   it('an unsubscribed handler stops receiving events', () => {

@@ -60,6 +60,9 @@ class MockPeerConnection implements PeerConnection {
     this.addedCandidates.push(c);
   });
 
+  addAudioTrack = jest.fn();
+  getLocalSdp = jest.fn((): string | null => null);
+
   on<K extends keyof PeerConnectionEvents>(
     event: K,
     handler: PeerConnectionEvents[K],
@@ -515,5 +518,108 @@ describe('SignalingSession handshake', () => {
     await expect(session.start()).resolves.toBeUndefined();
     expect(session.getStatus()).toBe('failed');
     expect(statuses).toEqual(['connecting', 'failed']);
+  });
+});
+
+describe('SignalingSession media seams (DMY-18)', () => {
+  it('awaits onPeerConnection BEFORE creating the offer (baby publishes audio first)', async () => {
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const order: string[] = [];
+    pc.createOffer = jest.fn(async (): Promise<SignalingSdp> => {
+      order.push('createOffer');
+      return { type: 'offer', sdp: 'offer-sdp' };
+    });
+
+    const session = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => pc,
+      onPeerConnection: async pcArg => {
+        order.push('onPeerConnection-start');
+        await Promise.resolve();
+        // Publish a (fake) track during the hook, like the baby-unit would.
+        pcArg.addAudioTrack(
+          { kind: 'audio', enabled: true, stop: jest.fn() },
+          { getTracks: () => [] },
+        );
+        order.push('onPeerConnection-end');
+      },
+    });
+
+    await session.start();
+    await flush();
+
+    // The audio is published before the offer is built.
+    expect(order).toEqual([
+      'onPeerConnection-start',
+      'onPeerConnection-end',
+      'createOffer',
+    ]);
+    expect(pc.addAudioTrack).toHaveBeenCalledTimes(1);
+    session.stop();
+  });
+
+  it('emits the local description (offer) for the encryption assertion', async () => {
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const seen: SignalingSdp[] = [];
+    const session = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => pc,
+      onLocalDescription: d => seen.push(d),
+    });
+    await session.start();
+    await flush();
+    expect(seen).toEqual([{ type: 'offer', sdp: 'offer-sdp' }]);
+    session.stop();
+  });
+
+  it('emits the local description (answer) on the responder', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const initiatorPc = new MockPeerConnection();
+    const responderPc = new MockPeerConnection();
+    const seen: SignalingSdp[] = [];
+    const initiator = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => initiatorPc,
+    });
+    const responder = createSignalingSession({
+      role: 'responder',
+      sessionId: SID,
+      transport: b,
+      createPeerConnection: () => responderPc,
+      onLocalDescription: d => seen.push(d),
+    });
+    await responder.start();
+    await initiator.start();
+    await flush();
+    expect(seen).toEqual([{ type: 'answer', sdp: 'answer-sdp' }]);
+    responder.stop();
+    initiator.stop();
+  });
+
+  it('a failing onPeerConnection hook fails the session (cannot negotiate media)', async () => {
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const statuses: SignalingSessionStatus[] = [];
+    const session = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => pc,
+      onStatusChange: s => statuses.push(s),
+      onPeerConnection: async () => {
+        throw new Error('mic denied');
+      },
+    });
+    await expect(session.start()).resolves.toBeUndefined();
+    expect(session.getStatus()).toBe('failed');
+    expect(pc.createOffer).not.toHaveBeenCalled();
   });
 });

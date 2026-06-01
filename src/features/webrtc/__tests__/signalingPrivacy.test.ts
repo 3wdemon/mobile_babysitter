@@ -43,6 +43,8 @@ class MockPeerConnection implements PeerConnection {
     this.remoteSet = true;
   });
   addIceCandidate = jest.fn(async (_c: SignalingIceCandidate) => {});
+  addAudioTrack = jest.fn();
+  getLocalSdp = jest.fn((): string | null => null);
   on<K extends keyof PeerConnectionEvents>(
     event: K,
     handler: PeerConnectionEvents[K],
