@@ -13,6 +13,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import {
+  addUsage,
+  EMPTY_QUOTA,
+  rolloverForToday,
+} from '../features/monetization/freeTierQuota';
 import { mmkvStateStorage } from '../services/storage/mmkv';
 import type { AppState, EphemeralState, PersistedState } from './types';
 
@@ -36,7 +41,11 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
     noiseThreshold: 0.6,
     // Opt-in: parent mode is unlocked by default until the user turns this on.
     biometricLockEnabled: false,
+    // Free by default. PLACEHOLDER — no real purchase grants this yet (DMY-27).
+    isPremium: false,
   },
+  // Free-tier daily usage starts empty; rolls over at local midnight. (DMY-11)
+  freeTierUsage: { ...EMPTY_QUOTA },
 };
 
 /**
@@ -84,6 +93,29 @@ export const useAppStore = create<AppState>()(
         set(state => ({
           settings: { ...state.settings, biometricLockEnabled: enabled },
         })),
+      // DMY-11: PLACEHOLDER premium flag. No StoreKit/purchase behind it yet
+      // (DMY-27); flips only via this action so the quota wiring is testable.
+      setPremium: isPremium =>
+        set(state => ({
+          settings: { ...state.settings, isPremium },
+        })),
+      // DMY-11: accumulate consumed free-tier time. Premium users have no cap,
+      // so we never touch the counter for them. The pure core handles local-day
+      // rollover and ignores non-finite / non-positive deltas.
+      addFreeTierUsage: deltaMs =>
+        set(state => {
+          if (state.settings.isPremium) {
+            return {};
+          }
+          return {
+            freeTierUsage: addUsage(state.freeTierUsage, deltaMs, Date.now()),
+          };
+        }),
+      resetFreeTierUsage: () =>
+        set(() => ({
+          // Re-stamp to today's local day with a zero counter.
+          freeTierUsage: rolloverForToday({ ...EMPTY_QUOTA }, Date.now()),
+        })),
       setConnectionStatus: connectionStatus => set({ connectionStatus }),
       // Pairing succeeded (QR scanned + validated). We record the session id and
       // mark `paired`, but the WebRTC handshake is NOT started here — signalling
@@ -104,7 +136,30 @@ export const useAppStore = create<AppState>()(
         role: state.role,
         onboardingCompleted: state.onboardingCompleted,
         settings: state.settings,
+        // Persist the free-tier counter so the 1h/day cap is not bypassed by a
+        // relaunch within the same local day (DMY-11). The stored `dateKey`
+        // makes a previous day's usage self-expiring on rollover.
+        freeTierUsage: state.freeTierUsage,
       }),
+      // Defensive merge (DMY-11, mindful of the DMY-43 persist-gap): the default
+      // zustand merge is SHALLOW, so a blob written before these fields existed
+      // would replace `settings` wholesale (dropping the new `isPremium`
+      // default) and would carry NO `freeTierUsage` at all. We deep-merge
+      // `settings` over the defaults and backfill `freeTierUsage` so an older
+      // on-disk shape rehydrates into a complete, valid state instead of leaving
+      // `undefined` holes. We do NOT attempt forward-migration beyond this.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<PersistedState>;
+        return {
+          ...current,
+          ...saved,
+          settings: {
+            ...current.settings,
+            ...(saved.settings ?? {}),
+          },
+          freeTierUsage: saved.freeTierUsage ?? current.freeTierUsage,
+        };
+      },
     },
   ),
 );

@@ -68,6 +68,38 @@ export interface Settings {
    * parent screen behaves exactly as before until the user enables it.
    */
   biometricLockEnabled: boolean;
+  /**
+   * Whether the user has the premium entitlement (DMY-11). When `true` the
+   * free-tier daily session cap (1h) does not apply. Defaults to `false`.
+   *
+   * IMPORTANT: this is a PLACEHOLDER flag only. There is NO real purchase /
+   * StoreKit / entitlement-verification behind it yet — that is DMY-27
+   * (blocked-external). For now it can only flip via the dev/test-facing
+   * `setPremium` action; nothing in the shipping UI grants it. The free-tier
+   * quota logic reads it so wiring is ready the moment DMY-27 lands.
+   */
+  isPremium: boolean;
+}
+
+/**
+ * Free-tier daily usage accounting (DMY-11).
+ *
+ * Tracks how much monitoring time has been consumed during the CURRENT local
+ * calendar day. Persisted so the cap survives an app restart within the same
+ * day; reset to zero on the first interaction of a new local day (midnight in
+ * the device's local time — see `freeTierQuota`). Holds no personal data, just
+ * a millisecond counter and an opaque local date-key.
+ */
+export interface FreeTierUsage {
+  /** Milliseconds of monitoring consumed so far during `dateKey`. */
+  usedMs: number;
+  /**
+   * The local calendar day this counter belongs to, as a `YYYY-MM-DD` key in
+   * the device's local time. When the current local day no longer matches this
+   * key, `usedMs` is treated as stale and reset to 0 (daily rollover at local
+   * midnight). `null` before any usage has been recorded.
+   */
+  dateKey: string | null;
 }
 
 /**
@@ -77,6 +109,11 @@ export interface PersistedState {
   role: Role;
   onboardingCompleted: boolean;
   settings: Settings;
+  /**
+   * Free-tier daily usage counter (DMY-11). Persisted so the 1h/day cap is not
+   * trivially reset by relaunching the app within the same local day.
+   */
+  freeTierUsage: FreeTierUsage;
 }
 
 /**
@@ -113,6 +150,21 @@ export interface AppActions {
   setNoiseThreshold: (threshold: number) => void;
   /** Enable or disable the biometric/PIN lock on parent mode (DMY-10). */
   setBiometricLockEnabled: (enabled: boolean) => void;
+  /**
+   * Set the premium entitlement flag (DMY-11). PLACEHOLDER only — there is no
+   * real purchase behind it (StoreKit is DMY-27). Exposed so tests and a future
+   * purchase flow can flip it; not wired to any shipping CTA.
+   */
+  setPremium: (isPremium: boolean) => void;
+  /**
+   * Record `deltaMs` of consumed free-tier monitoring time (DMY-11), rolling
+   * the counter over to 0 first if the current local day differs from the
+   * stored `dateKey` (local-midnight reset). Non-finite or non-positive deltas
+   * are ignored. No-op when the user is premium.
+   */
+  addFreeTierUsage: (deltaMs: number) => void;
+  /** Reset the free-tier daily usage counter to zero for the current day. */
+  resetFreeTierUsage: () => void;
   /** Update the ephemeral connection status. */
   setConnectionStatus: (status: ConnectionStatus) => void;
   /**
