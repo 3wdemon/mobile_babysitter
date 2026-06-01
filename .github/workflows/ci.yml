@@ -1,0 +1,177 @@
+name: CI
+
+# Triggers: push to the default branch (post-merge), plus PRs targeting main.
+# Feature branches are covered via the pull_request event once a PR is open,
+# so we do NOT run on every branch push — that would double-run CI for any
+# branch with an open PR (push + pull_request) and waste runner minutes.
+# Red CI (except the android-build job, which is continue-on-error) should
+# block merges. Branch protection / required status checks must be enabled by
+# a human in repo Settings > Branches (outside agent access) — see DMY-15 PR.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- ESLint -------------------------------------------------------------
+  # CLAUDE.md asks to lint ONLY changed files. We honor that on pull_request
+  # by diffing changed .ts/.tsx against the PR base. On push (and as a
+  # fallback when no relevant files changed / no base available) we run the
+  # project-wide `eslint .` — coverage/ is gitignored so it is absent on a
+  # fresh checkout and does not pollute results.
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need history so we can diff against the PR base commit.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint (changed files on PR, full project otherwise)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+              | grep -E '\.(ts|tsx)$' || true)
+            if [ -n "$CHANGED" ]; then
+              echo "Linting changed files:"
+              echo "$CHANGED"
+              echo "$CHANGED" | xargs npx eslint --max-warnings=0
+            else
+              echo "No changed .ts/.tsx files; nothing to lint."
+            fi
+          else
+            echo "Linting whole project (push event)."
+            npx eslint . --max-warnings=0
+          fi
+
+      - name: Prettier check (changed files on PR, full project otherwise)
+        # Non-blocking formatting check for visibility.
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            CHANGED=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+              | grep -E '\.(ts|tsx|js|json|md)$' || true)
+            if [ -n "$CHANGED" ]; then
+              echo "$CHANGED" | xargs npx prettier --check
+            else
+              echo "No changed files to prettier-check."
+            fi
+          else
+            npx prettier --check '**/*.{ts,tsx,js,json,md}'
+          fi
+
+  # --- TypeScript ----------------------------------------------------------
+  typecheck:
+    name: Typecheck (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (app / root program)
+        run: npx tsc --noEmit
+
+      - name: Typecheck (Node config program)
+        run: npx tsc -p tsconfig.node.json --noEmit
+
+      - name: Typecheck (Detox E2E program)
+        run: npx tsc -p tests/detox/tsconfig.json --noEmit
+
+  # --- Unit tests ----------------------------------------------------------
+  test:
+    name: Unit tests (Jest)
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest
+        run: npm test -- --ci
+
+  # --- Android debug build -------------------------------------------------
+  # continue-on-error: by request — the heavy/potentially flaky Android build
+  # must not block merges, but its status stays visible. Once stable it can be
+  # promoted to a required check.
+  #
+  # NOTE: no iOS build job. GitHub-hosted macOS runners are not available on
+  # the free plan, so iOS (xcodebuild) CI is intentionally omitted for now.
+  android-build:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Setup JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build debug APK (assembleDebug)
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
