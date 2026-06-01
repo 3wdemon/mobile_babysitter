@@ -22,7 +22,13 @@ function ErrorFallback({ onReset }: ErrorFallbackProps) {
   return (
     <View
       accessibilityRole="alert"
-      style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      style={[
+        styles.container,
+        {
+          backgroundColor: theme.colors.background,
+          padding: theme.spacing.xl,
+        },
+      ]}>
       <Text
         style={[
           styles.title,
@@ -30,6 +36,7 @@ function ErrorFallback({ onReset }: ErrorFallbackProps) {
             color: theme.colors.text,
             fontSize: theme.typography.fontSizes.lg,
             fontWeight: theme.typography.fontWeights.semibold,
+            marginBottom: theme.spacing.md,
           },
         ]}>
         Something went wrong
@@ -41,6 +48,7 @@ function ErrorFallback({ onReset }: ErrorFallbackProps) {
           {
             color: theme.colors.textMuted,
             fontSize: theme.typography.fontSizes.md,
+            marginBottom: theme.spacing.xl,
           },
         ]}>
         The app ran into an unexpected problem. You can try again — your
@@ -49,9 +57,21 @@ function ErrorFallback({ onReset }: ErrorFallbackProps) {
 
       <TouchableOpacity
         accessibilityRole="button"
-        style={[styles.button, { backgroundColor: theme.colors.primary }]}
+        style={[
+          styles.button,
+          {
+            backgroundColor: theme.colors.primary,
+            paddingVertical: theme.spacing.md,
+            paddingHorizontal: theme.spacing.xl,
+          },
+        ]}
         onPress={onReset}>
-        <Text style={[styles.buttonLabel, { color: theme.colors.onPrimary }]}>
+        <Text
+          style={{
+            color: theme.colors.onPrimary,
+            fontSize: theme.typography.fontSizes.md,
+            fontWeight: theme.typography.fontWeights.semibold,
+          }}>
           Try again
         </Text>
       </TouchableOpacity>
@@ -64,27 +84,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
   },
   title: {
-    marginBottom: 12,
     textAlign: 'center',
   },
   message: {
-    marginBottom: 24,
     textAlign: 'center',
     maxWidth: 320,
   },
   button: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
     borderRadius: 8,
     minWidth: 220,
     alignItems: 'center',
-  },
-  buttonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 
