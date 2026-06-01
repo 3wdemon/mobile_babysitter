@@ -10,7 +10,9 @@
     "test": "jest",
     "e2e:web": "playwright test",
     "e2e:native:build": "detox build -c ios.sim.debug",
-    "e2e:native:test": "detox test -c ios.sim.debug"
+    "e2e:native:test": "detox test -c ios.sim.debug",
+    "e2e:native:build:android": "detox build -c android.emu.debug",
+    "e2e:native:test:android": "detox test -c android.emu.debug"
   },
   "dependencies": {
     "@react-navigation/native": "^7.2.5",

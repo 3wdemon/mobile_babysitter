@@ -1,11 +1,15 @@
 {
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
-    "types": ["jest", "detox"]
+    // Detox ambient globals (device/element/by/detox) are scoped to the Detox
+    // program (tests/detox/tsconfig.json) so they don't leak into src/. Only
+    // jest globals are visible app-wide here.
+    "types": ["jest"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
   // Config files run in the Node toolchain, not the RN runtime. They are typed
   // by tsconfig.node.json (which supplies Node globals) and excluded here so
   // the app program stays free of Node types — see tsconfig.node.json.
-  "exclude": ["**/node_modules", "**/Pods", "*.config.ts"]
+  // tests/detox is type-checked by tests/detox/tsconfig.json (Detox types).
+  "exclude": ["**/node_modules", "**/Pods", "*.config.ts", "tests/detox"]
 }
