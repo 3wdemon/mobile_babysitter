@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PLACEHOLDER app icon (DMY-58) — NOT final brand.
+  Solid brand-blue (#2F6FED, theme `primary`) field with a white "MB" monogram
+  and a small "PLACEHOLDER" marker so it is unmistakably a stand-in. The square
+  master is rendered to every iOS AppIcon and Android mipmap density by
+  scripts/generate-app-icon.mjs. Replace with the real brand icon when ready.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" fill="#2F6FED"/>
+  <text x="512" y="470" fill="#FFFFFF" font-family="Helvetica, Arial, sans-serif"
+        font-size="440" font-weight="700" text-anchor="middle"
+        dominant-baseline="central" letter-spacing="-18">MB</text>
+  <text x="512" y="790" fill="#FFFFFF" fill-opacity="0.82"
+        font-family="Helvetica, Arial, sans-serif" font-size="92" font-weight="600"
+        text-anchor="middle" letter-spacing="14">PLACEHOLDER</text>
+</svg>

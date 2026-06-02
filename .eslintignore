@@ -1,0 +1,4 @@
+# Node ESM build/tooling scripts (run with bare `node`, not part of the RN app
+# bundle). They use import.meta / top-level await which the @react-native ESLint
+# parser does not accept; they are typechecked-out via `// @ts-nocheck`.
+scripts/

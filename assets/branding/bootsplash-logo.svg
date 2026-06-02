@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PLACEHOLDER bootsplash logo (DMY-58) — NOT final brand.
+  White "MB" monogram on a transparent canvas; the splash background color is
+  applied by the bootsplash generator (#2F6FED, theme `primary`). Replace with
+  the real brand mark when design is ready.
+-->
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <text x="100" y="100" fill="#FFFFFF" font-family="Helvetica, Arial, sans-serif"
+        font-size="96" font-weight="700" text-anchor="middle"
+        dominant-baseline="central" letter-spacing="-4">MB</text>
+</svg>

@@ -93,3 +93,10 @@ jest.mock('react-native-zeroconf');
 // peer-connection wrapper can be exercised. Most signalling tests inject a mock
 // PeerConnection / ctor directly through the PeerConnectionFactory seam.
 jest.mock('react-native-webrtc');
+
+// react-native-bootsplash (DMY-58) bridges to the native iOS storyboard /
+// Android SplashScreen window with no JS fallback under Jest. Use the manual
+// mock in __mocks__/react-native-bootsplash.ts (inert spies) so any test that
+// mounts <App /> — which hides the placeholder splash on navigator-ready —
+// runs without touching native code.
+jest.mock('react-native-bootsplash');
