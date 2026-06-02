@@ -20,7 +20,7 @@
  * or blocked result can be surfaced without blocking the flow.
  */
 import { useCallback, useState } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import {
   PERMISSIONS,
   RESULTS,
@@ -90,6 +90,14 @@ export interface UsePermissions {
    * `denied` so the onboarding flow can always continue.
    */
   request: () => Promise<PermissionStatuses>;
+  /**
+   * Open the OS app-settings screen so the user can grant a permission that is
+   * `blocked` (permanently denied) — the only place such a permission can be
+   * re-enabled. NEVER throws: a native/`Linking` failure is logged (redacted)
+   * and swallowed so a blocked-permission UI never crashes the host flow.
+   * Resolves `true` when the settings screen was opened, `false` otherwise.
+   */
+  openSettings: () => Promise<boolean>;
 }
 
 /**
@@ -134,5 +142,18 @@ export function usePermissions(): UsePermissions {
     }
   }, []);
 
-  return { statuses, requesting, request };
+  const openSettings = useCallback(async (): Promise<boolean> => {
+    try {
+      await Linking.openSettings();
+      return true;
+    } catch (error) {
+      // A blocked permission can only be changed from system Settings, but
+      // failing to open them must not crash the UI — log (redacted) and report
+      // failure so the caller can keep its guidance copy visible.
+      logger.warn('usePermissions: openSettings failed', error);
+      return false;
+    }
+  }, []);
+
+  return { statuses, requesting, request, openSettings };
 }
