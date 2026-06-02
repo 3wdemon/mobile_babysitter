@@ -119,7 +119,8 @@ function spyPlayback(): AudioPlayback & {
     start: jest.fn(),
     stop: jest.fn(),
     setMuted: jest.fn(),
-    // DMY-55 seam additions; unused by the audio-stream lifecycle tests.
+    // DMY-55 / DMY-56 seam additions; unused by the audio-stream lifecycle tests.
+    setVolume: jest.fn(),
     setRoute: jest.fn(),
     isBluetoothAvailable: jest.fn(() => false),
     getAvailableRoutes: jest.fn(() => ['speaker', 'earpiece'] as const),

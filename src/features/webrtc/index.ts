@@ -66,6 +66,7 @@ export {
   createSafeAudioPlayback,
   createAudioSessionPlayback,
   availableRoutesFor,
+  clampVolume,
   AUDIO_ROUTES,
   DEFAULT_AUDIO_ROUTE,
 } from './audioPlayback';

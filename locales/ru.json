@@ -118,6 +118,14 @@
     "selectedA11y": "{{label}}, выбрано",
     "bluetoothUnavailable": "Нет подключённого устройства Bluetooth"
   },
+  "volume": {
+    "label": "Громкость",
+    "value": "{{percent}}%",
+    "muted": "Без звука",
+    "valueA11y": "Громкость {{percent}} процентов",
+    "incrementA11y": "Увеличить громкость",
+    "decrementA11y": "Уменьшить громкость"
+  },
   "battery": {
     "unknown": "—",
     "charging": "заряжается",

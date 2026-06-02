@@ -122,6 +122,18 @@ export interface Settings {
    * and let the user opt INTO always-on video.
    */
   audioOnlyEnabled: boolean;
+  /**
+   * Parent-unit playback output volume on a normalised 0..1 scale (DMY-56),
+   * where `1` is full volume and `0` is fully attenuated (muted output). Applied
+   * to the {@link AudioPlayback} controller via `setVolume`. Persisted so the
+   * chosen level is restored on the next launch.
+   *
+   * Defaults to `1.0`: a monitor should be audible out of the box, and a parent
+   * who wants it quieter can lower it deliberately. Volume `0` mutes the OUTPUT
+   * but does NOT disconnect the stream — detection/alerts keep running and the
+   * user can raise it again instantly.
+   */
+  playbackVolume: number;
 }
 
 /**
@@ -202,6 +214,12 @@ export interface AppActions {
   setPowerSaverEnabled: (enabled: boolean) => void;
   /** Enable or disable parent-unit audio-only low-power mode (DMY-24). */
   setAudioOnlyEnabled: (enabled: boolean) => void;
+  /**
+   * Set the parent-unit playback volume (0..1) (DMY-56). Out-of-range or
+   * non-finite values are clamped to [0, 1]. `0` mutes the output without
+   * disconnecting the stream.
+   */
+  setPlaybackVolume: (volume: number) => void;
   /**
    * Set the premium entitlement flag (DMY-11). PLACEHOLDER only — there is no
    * real purchase behind it (StoreKit is DMY-27). Exposed so tests and a future

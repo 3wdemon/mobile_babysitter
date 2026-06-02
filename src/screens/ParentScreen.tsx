@@ -18,13 +18,20 @@
  * audio session lands (DMY-48), the controller is the safe no-op: route changes
  * are honoured as no-ops and Bluetooth reports unavailable, so the toggle hides
  * the Bluetooth option. The seam is ready for the real controller to drop in.
+ *
+ * DMY-56: during an active session the parent can also adjust the playback
+ * VOLUME (0..1). The level is persisted (`settings.playbackVolume`) and applied
+ * live to the controller via `setVolume`; on connect the persisted volume is
+ * (re-)applied so a restored preference actually takes effect. Volume 0 mutes
+ * the output WITHOUT disconnecting the stream (see AudioPlayback.setVolume).
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import AudioRouteToggle from '../components/AudioRouteToggle';
 import ConnectionQualityIndicator from '../components/ConnectionQualityIndicator';
 import OfflineIndicator from '../components/OfflineIndicator';
+import VolumeSlider from '../components/VolumeSlider';
 import ParentModeGate from '../features/auth/ParentModeGate';
 import ParentPairingScreen from '../features/pairing/screens/ParentPairingScreen';
 import {
@@ -50,6 +57,10 @@ function ParentScreen({ playback }: ParentScreenProps) {
   // The toggle is only meaningful once a live link exists — audio is flowing.
   const sessionActive = connectionStatus === 'connected';
 
+  // Persisted playback volume + its setter (DMY-56).
+  const playbackVolume = useAppStore(s => s.settings.playbackVolume);
+  const setPlaybackVolume = useAppStore(s => s.setPlaybackVolume);
+
   // One wrapped controller per controller identity. With no controller this is
   // the safe no-op (Bluetooth unavailable, setRoute a no-op) until DMY-48.
   const controller = useMemo(
@@ -73,6 +84,26 @@ function ParentScreen({ playback }: ParentScreenProps) {
       controller.setRoute(route);
     },
     [controller],
+  );
+
+  // DMY-56: apply the persisted volume to the controller whenever a session
+  // becomes active (so a RESTORED preference actually takes effect) or the
+  // controller identity changes. The wrapper clamps + swallows any error.
+  useEffect(() => {
+    if (sessionActive) {
+      controller.setVolume(playbackVolume);
+    }
+  }, [sessionActive, controller, playbackVolume]);
+
+  const onVolumeChange = useCallback(
+    (volume: number) => {
+      // Persist the new level AND apply it live. The store clamps to [0,1] and
+      // the controller wrapper clamps again defensively; setVolume(0) mutes the
+      // output without disconnecting the stream.
+      setPlaybackVolume(volume);
+      controller.setVolume(volume);
+    },
+    [controller, setPlaybackVolume],
   );
 
   return (
@@ -102,6 +133,14 @@ function ParentScreen({ playback }: ParentScreenProps) {
               availableRoutes={availableRoutes}
               onSelectRoute={onSelectRoute}
             />
+            {/*
+             * Playback volume (DMY-56). Only shown during an active session —
+             * there is no audio to attenuate otherwise. Volume 0 mutes the
+             * output WITHOUT disconnecting (AudioPlayback.setVolume contract).
+             */}
+            <View style={styles.volume}>
+              <VolumeSlider volume={playbackVolume} onChange={onVolumeChange} />
+            </View>
           </View>
         ) : null}
         <View style={styles.body}>
@@ -123,6 +162,10 @@ const styles = StyleSheet.create({
   audioRoute: {
     paddingHorizontal: 16,
     paddingBottom: 8,
+  },
+  volume: {
+    marginTop: 12,
+    alignSelf: 'stretch',
   },
   body: {
     flex: 1,

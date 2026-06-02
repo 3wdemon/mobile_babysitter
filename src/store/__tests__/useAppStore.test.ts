@@ -72,6 +72,7 @@ describe('useAppStore', () => {
       isPremium: false,
       powerSaverEnabled: true,
       audioOnlyEnabled: true,
+      playbackVolume: 1,
     });
     expect(state.connectionStatus).toBe('idle');
     expect(state.pairedSessionId).toBeNull();
@@ -233,6 +234,7 @@ describe('useAppStore', () => {
         isPremium: false,
         powerSaverEnabled: true,
         audioOnlyEnabled: true,
+        playbackVolume: 1,
       });
       expect(restored.connectionStatus).toBe('idle');
     });
@@ -258,6 +260,7 @@ describe('useAppStore', () => {
         isPremium: false,
         powerSaverEnabled: true,
         audioOnlyEnabled: true,
+        playbackVolume: 1,
       });
     });
 
@@ -332,6 +335,7 @@ describe('useAppStore', () => {
         isPremium: false,
         powerSaverEnabled: true,
         audioOnlyEnabled: true,
+        playbackVolume: 1,
       });
       // Required subfields explicitly present.
       expect(restored.settings.theme).toBe('system');
@@ -422,6 +426,7 @@ describe('useAppStore', () => {
           isPremium: false,
           powerSaverEnabled: true,
           audioOnlyEnabled: true,
+          playbackVolume: 1,
         },
         // reset() returns the counter to the empty default (no day stamped).
         freeTierUsage: { usedMs: 0, dateKey: null },
@@ -547,6 +552,53 @@ describe('useAppStore', () => {
       // Missing field backfilled to the default; saved fields preserved.
       expect(restored.settings.motionSensitivity).toBe(0.15);
       expect(restored.settings.theme).toBe('dark');
+    });
+  });
+
+  describe('playback volume (DMY-56)', () => {
+    it('defaults to full volume (1)', () => {
+      expect(useAppStore.getState().settings.playbackVolume).toBe(1);
+    });
+
+    it('updates the volume within range', () => {
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(0.5);
+      });
+      expect(useAppStore.getState().settings.playbackVolume).toBe(0.5);
+    });
+
+    it('clamps out-of-range values to [0, 1]', () => {
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(5);
+      });
+      expect(useAppStore.getState().settings.playbackVolume).toBe(1);
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(-3);
+      });
+      expect(useAppStore.getState().settings.playbackVolume).toBe(0);
+    });
+
+    it('accepts 0 (mute) as a valid persisted volume', () => {
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(0);
+      });
+      expect(useAppStore.getState().settings.playbackVolume).toBe(0);
+    });
+
+    it('ignores non-finite values, keeping the previous volume', () => {
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(0.4);
+        useAppStore.getState().setPlaybackVolume(NaN);
+      });
+      expect(useAppStore.getState().settings.playbackVolume).toBe(0.4);
+    });
+
+    it('persists the volume across a simulated restart', () => {
+      act(() => {
+        useAppStore.getState().setPlaybackVolume(0.25);
+      });
+      const restored = restartAndGetState();
+      expect(restored.settings.playbackVolume).toBe(0.25);
     });
   });
 

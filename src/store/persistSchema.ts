@@ -59,6 +59,8 @@ export const DEFAULT_PERSISTED_STATE: PersistedState = {
     isPremium: false,
     powerSaverEnabled: true,
     audioOnlyEnabled: true,
+    // Full volume by default — a monitor must be audible out of the box (DMY-56).
+    playbackVolume: 1,
   },
   freeTierUsage: { ...EMPTY_QUOTA },
 };
@@ -87,6 +89,9 @@ const settingsSchema: z.ZodType<Settings> = z.object({
   isPremium: z.boolean().catch(DEFAULT_SETTINGS.isPremium),
   powerSaverEnabled: z.boolean().catch(DEFAULT_SETTINGS.powerSaverEnabled),
   audioOnlyEnabled: z.boolean().catch(DEFAULT_SETTINGS.audioOnlyEnabled),
+  // 0..1 output volume (DMY-56). Out-of-range / non-finite / missing falls back
+  // to the full-volume default rather than persisting a silent or invalid level.
+  playbackVolume: unitScalar(DEFAULT_SETTINGS.playbackVolume),
 });
 
 /**
