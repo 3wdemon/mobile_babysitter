@@ -1,0 +1,47 @@
+/**
+ * Public surface of the smart-alerts feature (DMY-26).
+ *
+ * Turns privacy-safe detection events (cry / motion / no_motion / noise) into
+ * parent-unit alerts that play a DISTINCT sound per event type. Real sound-asset
+ * playback is abstracted behind {@link AlertSoundPlayer}; the shipped default is
+ * a no-op (real playback is the audio integration point — DMY-9).
+ *
+ * Privacy-first: nothing here carries audio, frames, detection metrics or any
+ * media — only an alert type, timestamp and sound id.
+ */
+export { AlertService, createAlertService } from './alertService';
+export type {
+  AlertServiceOptions,
+  AlertResult,
+  AlertDropReason,
+  Clock,
+} from './alertService';
+
+export {
+  SOUND_BY_ALERT_TYPE,
+  soundIdForType,
+  configForType,
+} from './alertSoundMap';
+
+export {
+  noopAlertSoundPlayer,
+  createNoopAlertSoundPlayer,
+} from './alertSoundPlayer';
+
+export { useAlerts } from './useAlerts';
+export type {
+  AlertEventSource,
+  AlertsState,
+  UseAlertsOptions,
+} from './useAlerts';
+
+export { default as LastAlertIndicator } from './LastAlertIndicator';
+export type { LastAlertIndicatorProps } from './LastAlertIndicator';
+
+export type {
+  AlertEvent,
+  AlertSoundPlayer,
+  AlertType,
+  AlertTypeConfig,
+  SoundId,
+} from './alertTypes';
