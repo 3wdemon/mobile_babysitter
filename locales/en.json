@@ -97,6 +97,17 @@
   "network": {
     "offline": "No network connection — the monitor can't reach the other phone."
   },
+  "connectionQuality": {
+    "label": "Connection quality",
+    "levels": {
+      "excellent": "Excellent",
+      "good": "Good",
+      "fair": "Fair",
+      "poor": "Poor"
+    },
+    "a11y": "Connection quality: {{level}}",
+    "warning": "Weak connection — the monitor may drop the link."
+  },
   "settings": {
     "title": "Settings",
     "openA11y": "Open settings",

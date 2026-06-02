@@ -13,6 +13,7 @@
  */
 import { StyleSheet, View } from 'react-native';
 
+import ConnectionQualityIndicator from '../components/ConnectionQualityIndicator';
 import OfflineIndicator from '../components/OfflineIndicator';
 import ParentModeGate from '../features/auth/ParentModeGate';
 import ParentPairingScreen from '../features/pairing/screens/ParentPairingScreen';
@@ -24,6 +25,16 @@ function ParentScreen(_props: RootStackScreenProps<'Parent'>) {
       <View style={styles.root}>
         {/* Top banner; renders nothing while online (DMY-60). */}
         <OfflineIndicator />
+        {/*
+         * 4-level link-quality indicator (DMY-53). `getStats` is intentionally
+         * omitted for now: the full media pipeline (DMY-45) that supplies a real
+         * RTT/loss `getStats` provider is not merged yet, so the indicator
+         * degrades to the coarse `connectionStatus`-derived level. Once DMY-45
+         * lands, pass its `getStats` here to get accurate stats-based levels.
+         */}
+        <View style={styles.quality}>
+          <ConnectionQualityIndicator />
+        </View>
         <View style={styles.body}>
           <ParentPairingScreen />
         </View>
@@ -35,6 +46,10 @@ function ParentScreen(_props: RootStackScreenProps<'Parent'>) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  quality: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   body: {
     flex: 1,
