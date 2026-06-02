@@ -19,6 +19,7 @@ import {
   rolloverForToday,
 } from '../features/monetization/freeTierQuota';
 import { mmkvStateStorage } from '../services/storage/mmkv';
+import { DEFAULT_PERSISTED_STATE, parsePersistedState } from './persistSchema';
 import type { AppState, EphemeralState, PersistedState } from './types';
 
 /**
@@ -28,35 +29,15 @@ export const APP_STORE_PERSIST_KEY = 'app-store';
 
 /**
  * Default persisted state used on first launch and by `reset`.
+ *
+ * Sourced from {@link DEFAULT_PERSISTED_STATE} (the single source of truth, also
+ * used by the hydration schema's per-field fallbacks) and deep-cloned so the
+ * store can never mutate the shared constant. (DMY-43)
  */
 const INITIAL_PERSISTED_STATE: PersistedState = {
-  role: null,
-  onboardingCompleted: false,
-  settings: {
-    theme: 'system',
-    alertSoundsEnabled: true,
-    // Default noise sensitivity (enter-threshold on the 0..1 loudness scale).
-    // Mirrors DEFAULT_NOISE_CONFIG.enterThreshold in features/detection; kept as
-    // a literal so the store does not depend on the feature module. (DMY-8)
-    noiseThreshold: 0.6,
-    // Default motion sensitivity (enter-threshold on the 0..1 motion scale).
-    // Mirrors DEFAULT_MOTION_CONFIG.enterThreshold in features/detection; kept
-    // as a literal so the store does not depend on the feature module. (DMY-25)
-    motionSensitivity: 0.15,
-    // Opt-in: parent mode is unlocked by default until the user turns this on.
-    biometricLockEnabled: false,
-    // Free by default. PLACEHOLDER — no real purchase grants this yet (DMY-27).
-    isPremium: false,
-    // On by default (DMY-12): dim-screen + sensors-off is the expected, safer,
-    // lower-power baby-unit posture per product-spec. User can opt out.
-    powerSaverEnabled: true,
-    // On by default (DMY-24): audio-only is the lower-power, lower-bandwidth
-    // parent posture (listen continuously, peek at video on demand). User can
-    // opt INTO always-on video.
-    audioOnlyEnabled: true,
-  },
-  // Free-tier daily usage starts empty; rolls over at local midnight. (DMY-11)
-  freeTierUsage: { ...EMPTY_QUOTA },
+  ...DEFAULT_PERSISTED_STATE,
+  settings: { ...DEFAULT_PERSISTED_STATE.settings },
+  freeTierUsage: { ...DEFAULT_PERSISTED_STATE.freeTierUsage },
 };
 
 /**
@@ -172,23 +153,24 @@ export const useAppStore = create<AppState>()(
         // makes a previous day's usage self-expiring on rollover.
         freeTierUsage: state.freeTierUsage,
       }),
-      // Defensive merge (DMY-11, mindful of the DMY-43 persist-gap): the default
-      // zustand merge is SHALLOW, so a blob written before these fields existed
-      // would replace `settings` wholesale (dropping the new `isPremium`
-      // default) and would carry NO `freeTierUsage` at all. We deep-merge
-      // `settings` over the defaults and backfill `freeTierUsage` so an older
-      // on-disk shape rehydrates into a complete, valid state instead of leaving
-      // `undefined` holes. We do NOT attempt forward-migration beyond this.
+      // Hardened merge (DMY-43). The default zustand merge is SHALLOW and trusts
+      // the on-disk blob verbatim, so a stale/partial/corrupt value could either
+      // drop newly-added fields (leaving `undefined` holes) or smuggle an
+      // out-of-range / wrong-typed value (e.g. `role: 12345`, `theme: "neon"`)
+      // straight into runtime state. We delegate to `parsePersistedState`, which
+      // validates the untrusted blob against a Zod schema, repairs/drops invalid
+      // fields, and DEEP-merges the survivors over the current defaults. The
+      // result is always a complete, valid persisted slice — a corrupt blob can
+      // never crash hydration. Ephemeral fields come from `current` (they are
+      // never persisted), and the live action functions are preserved.
       merge: (persisted, current) => {
-        const saved = (persisted ?? {}) as Partial<PersistedState>;
+        const validated = parsePersistedState(
+          persisted,
+          INITIAL_PERSISTED_STATE,
+        );
         return {
           ...current,
-          ...saved,
-          settings: {
-            ...current.settings,
-            ...(saved.settings ?? {}),
-          },
-          freeTierUsage: saved.freeTierUsage ?? current.freeTierUsage,
+          ...validated,
         };
       },
     },
