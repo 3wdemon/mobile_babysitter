@@ -35,6 +35,16 @@ export type {
   UseAlertsOptions,
 } from './useAlerts';
 
+export { useSnooze, SNOOZE_DURATION_MS } from './useSnooze';
+export type { SnoozeState, UseSnoozeOptions } from './useSnooze';
+
+export {
+  noopHaptic,
+  vibrationHaptic,
+  SNOOZE_HAPTIC_MS,
+} from './hapticFeedback';
+export type { HapticFeedback } from './hapticFeedback';
+
 export { default as LastAlertIndicator } from './LastAlertIndicator';
 export type { LastAlertIndicatorProps } from './LastAlertIndicator';
 

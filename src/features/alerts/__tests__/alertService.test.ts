@@ -235,3 +235,136 @@ describe('AlertService — lifecycle', () => {
     expect(service.handle('cry').event).not.toBeNull();
   });
 });
+
+describe('AlertService — snooze (DMY-28)', () => {
+  it('mutes a non-cry alert while snoozed (reason snoozed, no sound)', () => {
+    const player = makeSpyPlayer();
+    const clock = makeClock();
+    const service = createAlertService({ player, now: clock.now });
+
+    service.snooze(60000);
+    const result = service.handle('noise');
+
+    expect(result.event).toBeNull();
+    expect(result.droppedReason).toBe('snoozed');
+    expect(player.playSound).not.toHaveBeenCalled();
+  });
+
+  it('resumes alerts once the snooze interval elapses', () => {
+    const player = makeSpyPlayer();
+    const clock = makeClock();
+    const service = createAlertService({ player, now: clock.now });
+
+    service.snooze(60000);
+    expect(service.handle('noise').droppedReason).toBe('snoozed');
+
+    clock.advance(60000); // exactly at the boundary -> no longer snoozed
+    const after = service.handle('noise');
+
+    expect(after.event).not.toBeNull();
+    expect(player.playSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets cry BREAK THROUGH a snooze (baby safety)', () => {
+    const player = makeSpyPlayer();
+    const clock = makeClock();
+    const service = createAlertService({ player, now: clock.now });
+
+    service.snooze(60000);
+    const cry = service.handle('cry');
+
+    expect(cry.event).not.toBeNull();
+    expect(cry.event?.type).toBe('cry');
+    expect(player.playSound).toHaveBeenCalledWith(
+      soundIdForType('cry'),
+      expect.anything(),
+    );
+  });
+
+  it('snooze() stops any currently-sounding alert immediately', () => {
+    const player = makeSpyPlayer();
+    const clock = makeClock();
+    const service = createAlertService({ player, now: clock.now });
+
+    service.handle('noise');
+    service.snooze(60000);
+
+    expect(player.stop).toHaveBeenCalled();
+  });
+
+  it('isSnoozed reflects the window relative to the injected clock', () => {
+    const clock = makeClock();
+    const service = createAlertService({
+      player: makeSpyPlayer(),
+      now: clock.now,
+    });
+
+    expect(service.isSnoozed()).toBe(false);
+    service.snooze(1000);
+    expect(service.isSnoozed()).toBe(true);
+    expect(service.isSnoozed(500)).toBe(true);
+    expect(service.isSnoozed(1000)).toBe(false);
+  });
+
+  it('snoozeUntil exposes the deadline and self-expires', () => {
+    const clock = makeClock(100);
+    const service = createAlertService({
+      player: makeSpyPlayer(),
+      now: clock.now,
+    });
+
+    expect(service.snoozeUntil).toBeNull();
+    service.snooze(1000);
+    expect(service.snoozeUntil).toBe(1100);
+    clock.advance(1000);
+    expect(service.snoozeUntil).toBeNull();
+  });
+
+  it('ignores a non-positive / non-finite snooze duration', () => {
+    const player = makeSpyPlayer();
+    const service = createAlertService({ player, now: () => 0 });
+
+    expect(service.snooze(0)).toBeNull();
+    expect(service.snooze(-5)).toBeNull();
+    expect(service.snooze(Number.NaN)).toBeNull();
+    expect(service.snooze(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(service.isSnoozed()).toBe(false);
+
+    // A non-cry alert still sounds because no snooze took effect.
+    expect(service.handle('noise').event).not.toBeNull();
+  });
+
+  it('clearSnooze() resumes alerts at once', () => {
+    const player = makeSpyPlayer();
+    const service = createAlertService({ player, now: () => 0 });
+
+    service.snooze(60000);
+    expect(service.handle('noise').droppedReason).toBe('snoozed');
+
+    service.clearSnooze();
+    expect(service.isSnoozed()).toBe(false);
+    expect(service.handle('noise').event).not.toBeNull();
+  });
+
+  it('reset() also clears an active snooze', () => {
+    const player = makeSpyPlayer();
+    const service = createAlertService({ player, now: () => 0 });
+
+    service.snooze(60000);
+    service.reset();
+    expect(service.isSnoozed()).toBe(false);
+    expect(service.handle('noise').event).not.toBeNull();
+  });
+
+  it('snooze drop never carries any media (privacy)', () => {
+    const service = createAlertService({
+      player: makeSpyPlayer(),
+      now: () => 0,
+    });
+    service.snooze(60000);
+    const serialized = JSON.stringify(service.handle('motion'));
+    expect(serialized).not.toMatch(
+      /audio|buffer|pcm|frame|pixel|metric|level|wav|mp3/i,
+    );
+  });
+});

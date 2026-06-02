@@ -76,12 +76,17 @@ export interface AlertEvent {
  *  - `volume` — optional 0..1 playback volume hint passed to the player; the
  *    no-op player ignores it. Lets urgent alerts (cry) be louder than ambient
  *    ones (noise) once real playback lands (DMY-9).
+ *  - `breaksThroughSnooze` — when `true`, this type's sound is STILL played even
+ *    while the parent has snoozed alerts (DMY-28). Reserved for safety-critical
+ *    signals (a crying baby) that must never be silenced by a snooze gesture.
+ *    Defaults to `false` (the type is muted while snoozed).
  */
 export interface AlertTypeConfig {
   readonly soundId: SoundId;
   readonly priority: number;
   readonly cooldownMs: number;
   readonly volume?: number;
+  readonly breaksThroughSnooze?: boolean;
 }
 
 /**
