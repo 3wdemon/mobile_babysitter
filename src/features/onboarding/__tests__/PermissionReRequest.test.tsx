@@ -155,6 +155,75 @@ describe('PermissionReRequest', () => {
     expect(onAllGranted).toHaveBeenCalledTimes(2);
   });
 
+  it('auto-fires onAllGranted EXACTLY ONCE across re-renders with fresh callback identities', () => {
+    let autoFireCount = 0;
+    let continueTapCount = 0;
+
+    const grantedStatuses: PermissionStatuses = {
+      camera: 'granted',
+      microphone: 'granted',
+      notifications: 'granted',
+    };
+    mockUsePermissions.mockReturnValue(buildHook(grantedStatuses));
+
+    // Every render passes a BRAND-NEW inline arrow (fresh identity each time).
+    // Before the ref-latch fix this re-fired the auto-callback on each render.
+    const { rerender } = render(
+      <PermissionReRequest onAllGranted={() => (autoFireCount += 1)} />,
+    );
+
+    // Re-render several more times, each with a NEW callback identity, while
+    // the statuses stay all-granted.
+    rerender(<PermissionReRequest onAllGranted={() => (autoFireCount += 1)} />);
+    rerender(<PermissionReRequest onAllGranted={() => (autoFireCount += 1)} />);
+    rerender(<PermissionReRequest onAllGranted={() => (autoFireCount += 1)} />);
+
+    // The auto-fire latch guarantees a single auto-fire across all renders.
+    const AUTO_FIRE_COUNT = autoFireCount;
+    expect(AUTO_FIRE_COUNT).toBe(1);
+
+    // The user-initiated Continue tap is a separate path; it still fires.
+    rerender(
+      <PermissionReRequest onAllGranted={() => (continueTapCount += 1)} />,
+    );
+    fireEvent.press(screen.getByText('Continue'));
+    expect(continueTapCount).toBe(1);
+
+    // Auto-fire count remains untouched by the tap path.
+    expect(autoFireCount).toBe(1);
+  });
+
+  it('re-fires auto onAllGranted once on a true->false->true transition (latch resets)', () => {
+    const onAllGranted = jest.fn();
+    const grantedStatuses: PermissionStatuses = {
+      camera: 'granted',
+      microphone: 'granted',
+      notifications: 'granted',
+    };
+    const deniedStatuses: PermissionStatuses = {
+      camera: 'denied',
+      microphone: 'granted',
+      notifications: 'granted',
+    };
+
+    // First all-granted transition: auto-fire once.
+    mockUsePermissions.mockReturnValue(buildHook(grantedStatuses));
+    const { rerender } = render(
+      <PermissionReRequest onAllGranted={onAllGranted} />,
+    );
+    expect(onAllGranted).toHaveBeenCalledTimes(1);
+
+    // Fall back out of all-granted (latch should reset, no fire).
+    mockUsePermissions.mockReturnValue(buildHook(deniedStatuses));
+    rerender(<PermissionReRequest onAllGranted={onAllGranted} />);
+    expect(onAllGranted).toHaveBeenCalledTimes(1);
+
+    // Second all-granted transition: auto-fire exactly once more.
+    mockUsePermissions.mockReturnValue(buildHook(grantedStatuses));
+    rerender(<PermissionReRequest onAllGranted={onAllGranted} />);
+    expect(onAllGranted).toHaveBeenCalledTimes(2);
+  });
+
   it('treats unavailable permissions as satisfied (not blocking all-granted)', () => {
     mockUsePermissions.mockReturnValue(
       buildHook({

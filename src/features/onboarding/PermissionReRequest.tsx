@@ -32,7 +32,7 @@
  * comes from the i18n catalog under `onboarding.permissions.reRequest.*`
  * (reusing the existing `items.*` names and `status.*` labels).
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../../hooks/useTheme';
@@ -58,10 +58,18 @@ function isSatisfied(status: PermissionStatus): boolean {
 
 export interface PermissionReRequestProps {
   /**
-   * Invoked when every required permission is satisfied — both when the user
-   * taps the continue affordance and (once) automatically as soon as the
-   * statuses reach the all-granted state. Optional: a host that only cares
-   * about the rendered UI can omit it.
+   * Invoked when every required permission is satisfied. It fires on two
+   * independent paths:
+   *  - Automatically, EXACTLY ONCE per all-granted transition: the first render
+   *    in which the statuses reach the all-granted state fires it, guarded by an
+   *    internal latch so re-renders (including ones that pass a fresh inline
+   *    callback identity) do NOT re-fire it. The latch resets when the statuses
+   *    fall back out of all-granted, so a later true->false->true transition
+   *    auto-fires once again.
+   *  - When the user taps the continue affordance (always fires on tap,
+   *    independent of the auto-fire latch).
+   *
+   * Optional: a host that only cares about the rendered UI can omit it.
    */
   onAllGranted?: () => void;
 }
@@ -80,13 +88,29 @@ function PermissionReRequest({ onAllGranted }: PermissionReRequestProps) {
   );
   const allGranted = outstanding.length === 0;
 
-  // Fire the continue callback once when the flow becomes fully granted, so a
-  // host that auto-advances (e.g. session start) does not need to poll.
+  // Keep the latest callback in a ref so the auto-fire decision never depends
+  // on its identity (an inline arrow from the host changes every render and
+  // would otherwise re-trigger the effect).
+  const onAllGrantedRef = useRef(onAllGranted);
+  onAllGrantedRef.current = onAllGranted;
+
+  // Latch so the auto-fire happens EXACTLY ONCE per all-granted transition. It
+  // resets when the flow falls back out of all-granted, so a later
+  // false->true transition fires again.
+  const autoFiredRef = useRef(false);
+
+  // Auto-fire the continue callback once when the flow becomes fully granted,
+  // so a host that auto-advances (e.g. session start) does not need to poll.
   useEffect(() => {
     if (allGranted) {
-      onAllGranted?.();
+      if (!autoFiredRef.current) {
+        autoFiredRef.current = true;
+        onAllGrantedRef.current?.();
+      }
+    } else {
+      autoFiredRef.current = false;
     }
-  }, [allGranted, onAllGranted]);
+  }, [allGranted]);
 
   const requestButtonOpacity = requesting ? 0.6 : 1;
 
