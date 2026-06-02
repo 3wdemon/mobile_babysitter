@@ -102,7 +102,15 @@ function PrivacyPolicyScreen() {
             <Text
               accessibilityElementsHidden
               importantForAccessibility="no"
-              style={[styles.bullet, { color: theme.colors.primary }]}>
+              style={[
+                styles.bullet,
+                {
+                  color: theme.colors.primary,
+                  fontSize: theme.typography.fontSizes.md,
+                  lineHeight: theme.typography.lineHeights.md,
+                  marginRight: theme.spacing.sm,
+                },
+              ]}>
               {'•'}
             </Text>
             <Text
@@ -152,11 +160,7 @@ const styles = StyleSheet.create({
   point: {
     flexDirection: 'row',
   },
-  bullet: {
-    marginRight: 8,
-    fontSize: 16,
-    lineHeight: 24,
-  },
+  bullet: {},
   pointText: {
     flex: 1,
   },
