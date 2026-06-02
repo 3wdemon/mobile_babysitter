@@ -81,5 +81,8 @@
       "noAccount": "No account: there is no sign-up, no login, and no email required."
     },
     "footnote": "This text is a placeholder and does not constitute the final, legally binding privacy policy."
+  },
+  "network": {
+    "offline": "No network connection — the monitor can't reach the other phone."
   }
 }
