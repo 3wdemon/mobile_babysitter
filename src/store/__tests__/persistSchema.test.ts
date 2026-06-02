@@ -189,6 +189,64 @@ describe('parsePersistedState (DMY-43)', () => {
       expect(result.freeTierUsage.dateKey).toBe('2026-06-02');
     });
 
+    // AC1 (DMY-43): a persisted blob whose `settings` is null / missing / a
+    // non-object MUST normalize to the full default settings shape — it is not
+    // enough that hydration merely doesn't throw. Each case is asserted to carry
+    // the required `theme`/`alertSoundsEnabled` subfields with valid values, and
+    // to equal the canonical default settings object outright.
+    it.each<[string, unknown]>([
+      ['settings: null', { role: 'parent', settings: null }],
+      ['settings missing entirely', { role: 'parent' }],
+      ['settings: non-object string', { role: 'parent', settings: 'nope' }],
+      ['settings: number', { role: 'parent', settings: 42 }],
+      ['settings: array', { role: 'parent', settings: [] }],
+      [
+        'settings: array-of-objects (not a plain object)',
+        { role: 'parent', settings: [{ theme: 'dark' }] },
+      ],
+    ])(
+      'normalizes %s to the default settings shape (theme/alertSoundsEnabled present)',
+      (_name, blob) => {
+        const result = parsePersistedState(blob);
+        // Required subfields are present (AC1 wording).
+        expect(result.settings).toHaveProperty('theme');
+        expect(result.settings).toHaveProperty('alertSoundsEnabled');
+        // ...with valid values, not undefined holes.
+        expect(['system', 'light', 'dark']).toContain(result.settings.theme);
+        expect(typeof result.settings.alertSoundsEnabled).toBe('boolean');
+        // ...and the whole object equals the canonical default settings.
+        expect(result.settings).toEqual(DEFAULT_PERSISTED_STATE.settings);
+        // The sibling valid field is still recovered (per-field resilience).
+        expect(result.role).toBe('parent');
+      },
+    );
+
+    // AC2 (DMY-43): a corrupt / partial shape must not crash when a consumer
+    // READS `settings.theme`. We assert the read itself (a) does not throw and
+    // (b) yields a valid theme value, on a spread of corrupt shapes — stronger
+    // than the bare not-throw guard below.
+    it.each<[string, unknown]>([
+      ['settings: null', { settings: null }],
+      ['settings: empty object', { settings: {} }],
+      ['theme: out-of-enum', { settings: { theme: 'neon' } }],
+      ['theme: wrong type (number)', { settings: { theme: 5 } }],
+      ['theme: NaN', { settings: { theme: Number.NaN } }],
+      ['theme: object', { settings: { theme: { nested: true } } }],
+      ['completely empty blob', {}],
+      ['blob with only unknown keys', { totally: 'unknown', keys: 1 }],
+    ])(
+      'reading settings.theme is safe and valid after %s',
+      (_name, blob) => {
+        const result = parsePersistedState(blob);
+        let theme: string | undefined;
+        expect(() => {
+          // Simulate a consumer that reads the field directly (e.g. useTheme).
+          theme = result.settings.theme;
+        }).not.toThrow();
+        expect(['system', 'light', 'dark']).toContain(theme);
+      },
+    );
+
     it('never throws on adversarial input', () => {
       const adversarial: unknown[] = [
         { settings: 'not-an-object' },

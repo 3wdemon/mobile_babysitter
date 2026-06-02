@@ -307,6 +307,61 @@ describe('useAppStore', () => {
       expect(restored.settings.motionSensitivity).toBe(0.4);
     });
 
+    it('normalizes a persisted settings:null to the default shape on hydration (DMY-43 AC1)', () => {
+      // Persisted blob with settings explicitly null (interrupted write / older
+      // shape). After rehydration the store must expose the full default
+      // settings object with theme/alertSoundsEnabled present — not undefined.
+      seedPersistedRaw(
+        JSON.stringify({
+          state: { role: 'parent', onboardingCompleted: true, settings: null },
+          version: 0,
+        }),
+      );
+
+      const restored = restartAndGetState();
+      // Valid sibling fields still recovered.
+      expect(restored.role).toBe('parent');
+      expect(restored.onboardingCompleted).toBe(true);
+      // settings normalized to the full default shape.
+      expect(restored.settings).toEqual({
+        theme: 'system',
+        alertSoundsEnabled: true,
+        noiseThreshold: 0.6,
+        motionSensitivity: 0.15,
+        biometricLockEnabled: false,
+        isPremium: false,
+        powerSaverEnabled: true,
+        audioOnlyEnabled: true,
+      });
+      // Required subfields explicitly present.
+      expect(restored.settings.theme).toBe('system');
+      expect(restored.settings.alertSoundsEnabled).toBe(true);
+    });
+
+    it('reading settings.theme after hydrating a corrupt blob does not crash (DMY-43 AC2)', () => {
+      // settings present but with a corrupt theme plus a missing subfield.
+      seedPersistedRaw(
+        JSON.stringify({
+          state: {
+            role: 'baby',
+            settings: { theme: 'neon', alertSoundsEnabled: 'maybe' },
+          },
+          version: 0,
+        }),
+      );
+
+      const restored = restartAndGetState();
+      let theme: string | undefined;
+      expect(() => {
+        // A consumer (e.g. useTheme) reads the field straight off the store.
+        theme = restored.settings.theme;
+      }).not.toThrow();
+      // Corrupt enum repaired to the default; read yields a valid value.
+      expect(theme).toBe('system');
+      // The other corrupt field is also repaired, not left as a string.
+      expect(restored.settings.alertSoundsEnabled).toBe(true);
+    });
+
     it('preserves a valid persisted scalar that is also schema-valid (DMY-43)', () => {
       seedPersistedRaw(
         JSON.stringify({
