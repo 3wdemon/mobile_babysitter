@@ -15,6 +15,7 @@
  */
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import BatteryIndicator from '../components/BatteryIndicator';
 import OfflineIndicator from '../components/OfflineIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { PowerSaverIndicator, usePowerSaver } from '../features/powersaver';
@@ -40,7 +41,9 @@ function BabyScreen(_props: RootStackScreenProps<'Baby'>) {
       {/* Top banner; dark palette to match the baby-unit face (DMY-60). */}
       <OfflineIndicator mode="dark" />
       <BabyPairingScreen />
-      <View style={[styles.footer, { padding: theme.spacing.lg }]}>
+      <View style={[styles.footer, { padding: theme.spacing.lg, gap: theme.spacing.lg }]}>
+        {/* Battery level + low-battery warning for the baby unit (DMY-54). */}
+        <BatteryIndicator mode="dark" />
         <PowerSaverIndicator active={active} />
       </View>
     </ScrollView>

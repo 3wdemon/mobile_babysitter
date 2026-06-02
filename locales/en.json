@@ -107,6 +107,14 @@
     "a11y": "Connection quality: {{level}}",
     "warning": "Weak connection — the monitor may drop the link."
   },
+  "battery": {
+    "unknown": "—",
+    "charging": "charging",
+    "onBattery": "on battery",
+    "a11y": "Baby-unit battery {{percent}}, {{state}}.",
+    "a11yUnknown": "Baby-unit battery level unknown.",
+    "lowWarning": "Battery low — plug in the baby phone so the monitor keeps running."
+  },
   "settings": {
     "title": "Settings",
     "openA11y": "Open settings",
