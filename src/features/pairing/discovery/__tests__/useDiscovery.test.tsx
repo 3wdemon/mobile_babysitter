@@ -106,8 +106,128 @@ describe('useDiscoveredUnits (parent)', () => {
 
   it('does not browse when disabled', () => {
     const fake = createFakeBackend();
-    renderHook(() => useDiscoveredUnits({ backend: fake.backend, enabled: false }));
+    renderHook(() =>
+      useDiscoveredUnits({ backend: fake.backend, enabled: false }),
+    );
     expect(fake.calls.scan).toBe(0);
+  });
+
+  it('settles immediately when a unit resolves (DMY-59)', () => {
+    const fake = createFakeBackend();
+    const sid = generateSessionId();
+    const { result } = renderHook(() =>
+      useDiscoveredUnits({ backend: fake.backend, settleMs: 10_000 }),
+    );
+
+    // Browsing, nothing resolved, grace window not elapsed -> not settled.
+    expect(result.current.settled).toBe(false);
+
+    act(() => fake.emitResolved(resolved(sid)));
+    expect(result.current.settled).toBe(true);
+  });
+
+  it('settles after the grace window with 0 units (DMY-59)', () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createFakeBackend();
+      const { result } = renderHook(() =>
+        useDiscoveredUnits({ backend: fake.backend, settleMs: 2500 }),
+      );
+
+      expect(result.current.settled).toBe(false);
+
+      act(() => {
+        jest.advanceTimersByTime(2500);
+      });
+
+      expect(result.current.settled).toBe(true);
+      expect(result.current.units).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('is never settled while disabled (DMY-59)', () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createFakeBackend();
+      const { result } = renderHook(() =>
+        useDiscoveredUnits({
+          backend: fake.backend,
+          enabled: false,
+          settleMs: 1,
+        }),
+      );
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(result.current.settled).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('clears the grace timer on unmount mid-window (no leak / act warning) (DMY-59)', () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const fake = createFakeBackend();
+      const { result, unmount } = renderHook(() =>
+        useDiscoveredUnits({ backend: fake.backend, settleMs: 2500 }),
+      );
+      // Browse running, grace window open, nothing resolved yet.
+      expect(result.current.settled).toBe(false);
+
+      // Unmount BEFORE the grace timer fires, then advance past it. The cleanup
+      // must clear the pending setTimeout so setGraceElapsed never fires on the
+      // unmounted hook — otherwise React logs an act(...)/state-on-unmounted
+      // warning to console.error.
+      unmount();
+      act(() => {
+        jest.advanceTimersByTime(5000);
+      });
+
+      expect(fake.calls.stop).toBe(1);
+      expect(fake.calls.removeListeners).toBe(1);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('re-arms the grace window when re-enabled after settling (DMY-59)', () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createFakeBackend();
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) =>
+          useDiscoveredUnits({ backend: fake.backend, enabled, settleMs: 2500 }),
+        { initialProps: { enabled: true } },
+      );
+
+      // Settle the first browse with 0 units.
+      act(() => {
+        jest.advanceTimersByTime(2500);
+      });
+      expect(result.current.settled).toBe(true);
+
+      // Disable: no browse to settle.
+      act(() => rerender({ enabled: false }));
+      expect(result.current.settled).toBe(false);
+
+      // Re-enable: a fresh browse begins and the grace window must restart, so
+      // an empty result reads as "loading" again, not a stale "settled".
+      act(() => rerender({ enabled: true }));
+      expect(result.current.settled).toBe(false);
+
+      act(() => {
+        jest.advanceTimersByTime(2500);
+      });
+      expect(result.current.settled).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

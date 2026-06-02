@@ -44,6 +44,14 @@ function useBackend(injected?: ZeroconfBackend): ZeroconfBackend {
   return fallbackRef.current;
 }
 
+/**
+ * Grace period (ms) after a browse starts before it is considered "settled".
+ * mDNS resolution is not instantaneous, so until this elapses an empty list
+ * means "still looking" (loading) rather than "nothing on the network"
+ * (empty). The first resolved unit also settles the scan immediately. (DMY-59)
+ */
+export const DISCOVERY_SETTLE_MS = 2500;
+
 export interface UseDiscoveredUnitsOptions {
   /** Inject a backend (tests). Omit to use the real zeroconf adapter. */
   readonly backend?: ZeroconfBackend;
@@ -53,6 +61,11 @@ export interface UseDiscoveredUnitsOptions {
    * network discovery).
    */
   readonly enabled?: boolean;
+  /**
+   * Grace period (ms) before an empty browse is treated as settled. Defaults to
+   * {@link DISCOVERY_SETTLE_MS}. Exposed mainly so tests can shorten it.
+   */
+  readonly settleMs?: number;
 }
 
 export interface UseDiscoveredUnits {
@@ -60,6 +73,13 @@ export interface UseDiscoveredUnits {
   readonly units: readonly DiscoveredBabyUnit[];
   /** Whether a browse is currently active. */
   readonly scanning: boolean;
+  /**
+   * Whether the browse has settled: either at least one unit has resolved, or
+   * the grace period has elapsed. Drives the loading-vs-empty decision —
+   * `scanning && !settled` is "loading", `settled && units.length === 0` is
+   * "nothing found". Always `false` while disabled (no browse in progress).
+   */
+  readonly settled: boolean;
 }
 
 /**
@@ -69,7 +89,11 @@ export interface UseDiscoveredUnits {
 export function useDiscoveredUnits(
   options: UseDiscoveredUnitsOptions = {},
 ): UseDiscoveredUnits {
-  const { backend: injected, enabled = true } = options;
+  const {
+    backend: injected,
+    enabled = true,
+    settleMs = DISCOVERY_SETTLE_MS,
+  } = options;
   const backend = useBackend(injected);
 
   // One service per (hook lifetime × backend identity).
@@ -81,6 +105,10 @@ export function useDiscoveredUnits(
   const [units, setUnits] = useState<readonly DiscoveredBabyUnit[]>(() =>
     service.getUnits(),
   );
+
+  // The browse has "settled" once the grace timer elapses or a unit resolves.
+  // Until then an empty list is "still looking", not "nothing found" (DMY-59).
+  const [graceElapsed, setGraceElapsed] = useState(false);
 
   useEffect(() => {
     // subscribe() invokes the listener immediately with the current snapshot.
@@ -96,7 +124,21 @@ export function useDiscoveredUnits(
     };
   }, [service, enabled]);
 
-  return { units, scanning: service.isScanning };
+  // Restart the grace window whenever a fresh browse begins.
+  useEffect(() => {
+    setGraceElapsed(false);
+    if (!enabled) {
+      return;
+    }
+    const timer = setTimeout(() => setGraceElapsed(true), settleMs);
+    return () => clearTimeout(timer);
+  }, [service, enabled, settleMs]);
+
+  // Settled: a unit resolved (we have a result), or the grace window elapsed.
+  // Never settled while disabled — there is no browse to settle.
+  const settled = enabled && (units.length > 0 || graceElapsed);
+
+  return { units, scanning: service.isScanning, settled };
 }
 
 export interface UsePublishServiceOptions {

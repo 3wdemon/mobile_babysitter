@@ -22,6 +22,7 @@ export type { DiscoveryListener } from './discoveryService';
 export {
   useDiscoveredUnits,
   usePublishService,
+  DISCOVERY_SETTLE_MS,
 } from './useDiscovery';
 export type {
   UseDiscoveredUnits,

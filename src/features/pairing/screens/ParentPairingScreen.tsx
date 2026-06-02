@@ -31,8 +31,10 @@ import {
   type ScannedObjectType,
 } from 'react-native-vision-camera';
 
+import LoadingState from '../../../components/LoadingState';
 import { useTheme } from '../../../hooks/useTheme';
 import { logger } from '../../../services/logger';
+import { useAppStore } from '../../../store/useAppStore';
 import ParentMediaView from '../../webrtc/ParentMediaView';
 import { usePermissions } from '../../onboarding/usePermissions';
 import DiscoveredUnitsList from '../discovery/DiscoveredUnitsList';
@@ -67,11 +69,21 @@ function ParentPairingScreen() {
   const { status, errorReason, onScan, pairWithSessionId, reset } =
     usePairingScanner();
 
+  // Once paired, the signalling layer advances connectionStatus
+  // paired -> connecting -> connected (DMY-16/18). While the link is being
+  // established we surface the unified loading state instead of an empty
+  // media surface.
+  const connectionStatus = useAppStore(s => s.connectionStatus);
+  const connecting =
+    connectionStatus === 'paired' || connectionStatus === 'connecting';
+
   // mDNS/Bonjour local discovery (DMY-7): browse the LAN for baby-units while
   // the scanner is open, as a QR-free alternative on the same Wi-Fi. Gated on
   // camera permission only because the whole pairing view is — discovery itself
   // needs no camera. Tapping a unit pairs via its advertised session id.
-  const { units, scanning } = useDiscoveredUnits({ enabled: hasCamera });
+  const { units, scanning, settled } = useDiscoveredUnits({
+    enabled: hasCamera,
+  });
 
   const onSelectDiscovered = useCallback(
     (sessionId: string) => {
@@ -137,7 +149,8 @@ function ParentPairingScreen() {
     return (
       <View
         testID="parent-pairing"
-        style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
         <Text
           accessibilityRole="header"
           style={[
@@ -149,7 +162,8 @@ function ParentPairingScreen() {
               lineHeight: theme.typography.lineHeights.xl,
               marginBottom: theme.spacing.sm,
             },
-          ]}>
+          ]}
+        >
           Camera access needed
         </Text>
         <Text
@@ -161,7 +175,8 @@ function ParentPairingScreen() {
               lineHeight: theme.typography.lineHeights.md,
               marginBottom: theme.spacing.xl,
             },
-          ]}>
+          ]}
+        >
           {blocked
             ? 'Camera access is turned off. Enable it in Settings to scan the baby unit’s code. The camera is only used to read the pairing QR.'
             : 'We need the camera to scan the QR code on the baby unit. It’s only used for pairing.'}
@@ -182,7 +197,8 @@ function ParentPairingScreen() {
               opacity: requestButtonOpacity,
             },
           ]}
-          onPress={blocked ? onOpenSettings : onRequestCamera}>
+          onPress={blocked ? onOpenSettings : onRequestCamera}
+        >
           <Text
             style={[
               styles.buttonLabel,
@@ -191,7 +207,8 @@ function ParentPairingScreen() {
                 fontSize: theme.typography.fontSizes.md,
                 fontWeight: theme.typography.fontWeights.semibold,
               },
-            ]}>
+            ]}
+          >
             {blocked
               ? 'Open Settings'
               : requesting
@@ -208,7 +225,8 @@ function ParentPairingScreen() {
     return (
       <View
         testID="parent-pairing"
-        style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
         <Text
           accessibilityRole="header"
           style={[
@@ -220,7 +238,8 @@ function ParentPairingScreen() {
               lineHeight: theme.typography.lineHeights.xl,
               marginBottom: theme.spacing.sm,
             },
-          ]}>
+          ]}
+        >
           Paired
         </Text>
         <Text
@@ -233,10 +252,20 @@ function ParentPairingScreen() {
               lineHeight: theme.typography.lineHeights.md,
               marginBottom: theme.spacing.xl,
             },
-          ]}>
+          ]}
+        >
           Connected to the baby unit. The live audio/video link starts in a
           moment.
         </Text>
+
+        {connecting ? (
+          <View style={mediaViewStyle}>
+            <LoadingState
+              testID="parent-connecting"
+              message="Connecting to the baby unit…"
+            />
+          </View>
+        ) : null}
 
         <View style={mediaViewStyle}>
           <ParentMediaView />
@@ -254,7 +283,8 @@ function ParentPairingScreen() {
               paddingHorizontal: theme.spacing.xl,
             },
           ]}
-          onPress={reset}>
+          onPress={reset}
+        >
           <Text
             style={[
               styles.buttonLabel,
@@ -263,7 +293,8 @@ function ParentPairingScreen() {
                 fontSize: theme.typography.fontSizes.md,
                 fontWeight: theme.typography.fontWeights.semibold,
               },
-            ]}>
+            ]}
+          >
             Scan a different unit
           </Text>
         </TouchableOpacity>
@@ -277,7 +308,8 @@ function ParentPairingScreen() {
   return (
     <View
       testID="parent-pairing"
-      style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
       {device ? (
         <Camera
           style={styles.camera}
@@ -288,7 +320,8 @@ function ParentPairingScreen() {
       ) : (
         <View
           testID="camera-unavailable"
-          style={[styles.camera, styles.cameraFallback]}>
+          style={[styles.camera, styles.cameraFallback]}
+        >
           <Text
             style={[
               styles.body,
@@ -297,7 +330,8 @@ function ParentPairingScreen() {
                 fontSize: theme.typography.fontSizes.md,
                 lineHeight: theme.typography.lineHeights.md,
               },
-            ]}>
+            ]}
+          >
             No camera available on this device.
           </Text>
         </View>
@@ -310,7 +344,8 @@ function ParentPairingScreen() {
             padding: theme.spacing.xl,
             backgroundColor: theme.colors.overlay,
           },
-        ]}>
+        ]}
+      >
         <Text
           accessibilityRole="header"
           style={[
@@ -322,7 +357,8 @@ function ParentPairingScreen() {
               lineHeight: theme.typography.lineHeights.lg,
               marginBottom: theme.spacing.xs,
             },
-          ]}>
+          ]}
+        >
           {reject ? reject.title : 'Scan the baby unit'}
         </Text>
         <Text
@@ -334,7 +370,8 @@ function ParentPairingScreen() {
               fontSize: theme.typography.fontSizes.sm,
               lineHeight: theme.typography.lineHeights.sm,
             },
-          ]}>
+          ]}
+        >
           {reject
             ? reject.body
             : 'Point the camera at the QR code shown on the baby phone.'}
@@ -344,6 +381,7 @@ function ParentPairingScreen() {
           <DiscoveredUnitsList
             units={units}
             scanning={scanning}
+            settled={settled}
             onSelect={onSelectDiscovered}
           />
         </View>

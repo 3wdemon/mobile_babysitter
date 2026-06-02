@@ -20,9 +20,28 @@ function unit(sid: string): DiscoveredBabyUnit {
 }
 
 describe('DiscoveredUnitsList', () => {
-  it('shows the looking-for-units empty state while scanning', () => {
-    render(<DiscoveredUnitsList units={[]} scanning onSelect={jest.fn()} />);
+  it('shows the loading state while scanning and not yet settled', () => {
+    render(
+      <DiscoveredUnitsList
+        units={[]}
+        scanning
+        settled={false}
+        onSelect={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId('discovered-loading')).toBeTruthy();
     expect(screen.getByText(/Looking for baby units/i)).toBeTruthy();
+    // Not the empty state yet.
+    expect(screen.queryByTestId('discovered-empty')).toBeNull();
+  });
+
+  it('shows the empty-with-guidance state once a scan settles with 0 units', () => {
+    render(
+      <DiscoveredUnitsList units={[]} scanning settled onSelect={jest.fn()} />,
+    );
+    expect(screen.getByTestId('discovered-empty')).toBeTruthy();
+    expect(screen.getByText(/No baby units found/i)).toBeTruthy();
+    expect(screen.queryByTestId('discovered-loading')).toBeNull();
   });
 
   it('shows the discovery-off empty state when not scanning', () => {
