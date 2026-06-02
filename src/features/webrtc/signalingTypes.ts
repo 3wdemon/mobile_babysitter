@@ -210,8 +210,9 @@ export interface PeerConnection {
    * the underlying connection does not support `addTrack`). The returned sender
    * is the handle the video layer uses to pause/resume (`replaceTrack`) and to
    * shape the encoding (`setParameters`, adaptive bitrate) WITHOUT
-   * renegotiating. Must be called BEFORE the offer is created so the video
-   * m-line is part of the initial negotiation.
+   * renegotiating. Must be called BEFORE the local description (offer/answer) is
+   * created so the video m-line is part of the initial negotiation. On the
+   * baby-unit (the responder, DMY-17) that means before the answer.
    */
   addVideoTrack(
     track: MediaStreamTrackLike,
