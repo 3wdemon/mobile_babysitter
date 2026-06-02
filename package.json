@@ -33,6 +33,7 @@
     "react-native-vision-camera": "^5.0.11",
     "react-native-webrtc": "^124.0.7",
     "react-native-zeroconf": "^0.14.0",
+    "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
