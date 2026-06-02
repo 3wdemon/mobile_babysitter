@@ -138,6 +138,24 @@ describe('createSafeAudioPlayback', () => {
     expect(inner.stop).not.toHaveBeenCalled();
   });
 
+  it('muting then raising resumes via setVolume alone — no re-handshake', () => {
+    // AC: volume 0 mutes but the stream stays connected, and raising again
+    // resumes audibly WITHOUT re-handshaking. At the seam that means the whole
+    // 0 -> up cycle flows through setVolume only — never start/stop/setRoute.
+    const inner = mockPlayback();
+    const safe = createSafeAudioPlayback(inner);
+
+    safe.setVolume(0); // mute
+    safe.setVolume(0.5); // raise back up
+
+    expect(inner.setVolume).toHaveBeenNthCalledWith(1, 0);
+    expect(inner.setVolume).toHaveBeenNthCalledWith(2, 0.5);
+    // No teardown and no re-establish: the live stream/route is untouched.
+    expect(inner.stop).not.toHaveBeenCalled();
+    expect(inner.start).not.toHaveBeenCalled();
+    expect(inner.setRoute).not.toHaveBeenCalled();
+  });
+
   it('forwards setRoute to the wrapped controller with the chosen route', () => {
     const inner = mockPlayback();
     const safe = createSafeAudioPlayback(inner);
