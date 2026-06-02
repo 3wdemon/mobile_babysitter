@@ -31,6 +31,8 @@ export type RootStackParamList = {
   About: undefined;
   /** Privacy policy (placeholder copy) — DMY-64. */
   PrivacyPolicy: undefined;
+  /** Settings screen (theme/role/sensitivity/re-pair/about) — DMY-52. */
+  Settings: undefined;
 };
 
 /**

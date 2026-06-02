@@ -15,15 +15,59 @@
  * onboarding routes are not reachable once complete, and vice versa.
  */
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 import OnboardingNavigator from '../features/onboarding/OnboardingNavigator';
+import { useTranslation } from '../hooks/useTranslation';
 import { useAppStore } from '../store/useAppStore';
 import BabyScreen from '../screens/BabyScreen';
 import ParentScreen from '../screens/ParentScreen';
 import PairingScreen from '../screens/PairingScreen';
 import AboutScreen from '../screens/AboutScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
-import type { RootStackParamList } from './types';
+import SettingsScreen from '../screens/SettingsScreen';
+import type { RootStackParamList, RootStackScreenProps } from './types';
+
+/**
+ * A header gear button that opens the Settings screen (DMY-52). Rendered as the
+ * `headerRight` on the role screens (Baby / Parent) so Settings is reachable
+ * from the main flow.
+ */
+function SettingsHeaderButton({
+  navigation,
+}: {
+  navigation: RootStackScreenProps<'Baby' | 'Parent'>['navigation'];
+}) {
+  const { t } = useTranslation();
+  return (
+    <TouchableOpacity
+      testID="header-settings-button"
+      accessibilityRole="button"
+      accessibilityLabel={t('settings.openA11y')}
+      onPress={() => navigation.navigate('Settings')}
+    >
+      {/* Gear glyph; label provides the accessible name. */}
+      <Text style={headerStyles.gear}>⚙︎</Text>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * `headerRight` factory for the role screens. Defined at module scope (rather
+ * than inline in `screenOptions`) so it is a stable component reference — the
+ * idiomatic React Navigation header pattern.
+ */
+function renderSettingsHeaderRight(
+  navigation: RootStackScreenProps<'Baby' | 'Parent'>['navigation'],
+) {
+  return <SettingsHeaderButton navigation={navigation} />;
+}
+
+const headerStyles = StyleSheet.create({
+  gear: {
+    fontSize: 20,
+  },
+});
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -54,12 +98,18 @@ function RootNavigator() {
       <Stack.Screen
         name="Baby"
         component={BabyScreen}
-        options={{ title: 'Baby unit' }}
+        options={({ navigation }) => ({
+          title: 'Baby unit',
+          headerRight: () => renderSettingsHeaderRight(navigation),
+        })}
       />
       <Stack.Screen
         name="Parent"
         component={ParentScreen}
-        options={{ title: 'Parent unit' }}
+        options={({ navigation }) => ({
+          title: 'Parent unit',
+          headerRight: () => renderSettingsHeaderRight(navigation),
+        })}
       />
       {/*
        * Legal screens (DMY-64). Registered in the stack so they are reachable
@@ -75,6 +125,12 @@ function RootNavigator() {
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}
         options={{ title: 'Privacy Policy' }}
+      />
+      {/* Settings (DMY-52). Reached via the header gear on Baby / Parent. */}
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: 'Settings' }}
       />
     </Stack.Navigator>
   );
