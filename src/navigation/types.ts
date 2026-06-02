@@ -27,6 +27,10 @@ export type RootStackParamList = {
   Baby: undefined;
   /** Parent unit (monitoring side). */
   Parent: undefined;
+  /** App info screen (name, version, privacy link) — DMY-64. */
+  About: undefined;
+  /** Privacy policy (placeholder copy) — DMY-64. */
+  PrivacyPolicy: undefined;
 };
 
 /**

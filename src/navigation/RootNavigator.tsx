@@ -21,6 +21,8 @@ import { useAppStore } from '../store/useAppStore';
 import BabyScreen from '../screens/BabyScreen';
 import ParentScreen from '../screens/ParentScreen';
 import PairingScreen from '../screens/PairingScreen';
+import AboutScreen from '../screens/AboutScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -58,6 +60,21 @@ function RootNavigator() {
         name="Parent"
         component={ParentScreen}
         options={{ title: 'Parent unit' }}
+      />
+      {/*
+       * Legal screens (DMY-64). Registered in the stack so they are reachable
+       * programmatically today; the intended entry point lives in Settings,
+       * which wires these in via DMY-52.
+       */}
+      <Stack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{ title: 'About' }}
+      />
+      <Stack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{ title: 'Privacy Policy' }}
       />
     </Stack.Navigator>
   );
