@@ -61,9 +61,20 @@ export {
   assertEncryptedMediaProfile,
   AUDIO_ONLY_CONSTRAINTS,
 } from './audioStream';
-export { noopAudioPlayback, createSafeAudioPlayback } from './audioPlayback';
+export {
+  noopAudioPlayback,
+  createSafeAudioPlayback,
+  createAudioSessionPlayback,
+  availableRoutesFor,
+  AUDIO_ROUTES,
+  DEFAULT_AUDIO_ROUTE,
+} from './audioPlayback';
 export { useAudioStream } from './useAudioStream';
-export type { AudioPlayback } from './audioPlayback';
+export type {
+  AudioPlayback,
+  AudioRoute,
+  AudioSession,
+} from './audioPlayback';
 
 // --- Two-way talk: parent→baby push-to-talk + echo cancellation (DMY-20) -----
 // The parent captures its own mic with native echo cancellation (TALK_AUDIO_
