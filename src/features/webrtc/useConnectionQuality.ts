@@ -19,13 +19,11 @@
 import { useEffect, useState } from 'react';
 
 import {
-  levelFromStatus,
   resolveConnectionQuality,
   type ConnectionQuality,
   type GetConnectionStats,
 } from './connectionQuality';
 import { useAppStore } from '../../store/useAppStore';
-import type { ConnectionStatus } from '../../store/types';
 
 /** Default poll cadence for stats sampling (ms). */
 export const DEFAULT_QUALITY_POLL_MS = 2000;
@@ -67,12 +65,4 @@ export function useConnectionQuality(
   }, [status, getStats, intervalMs]);
 
   return level;
-}
-
-/**
- * Pure helper exposed for non-React call sites/tests that only have a status
- * (no provider). Thin alias over {@link levelFromStatus}.
- */
-export function qualityFromStatus(status: ConnectionStatus): ConnectionQuality {
-  return levelFromStatus(status);
 }

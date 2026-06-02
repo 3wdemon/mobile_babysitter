@@ -98,7 +98,6 @@
     "offline": "No network connection — the monitor can't reach the other phone."
   },
   "connectionQuality": {
-    "label": "Connection quality",
     "levels": {
       "excellent": "Excellent",
       "good": "Good",

@@ -42,6 +42,17 @@ const FILLED_BARS: Record<ConnectionQuality, number> = {
   poor: 1,
 };
 
+/** Width of a single signal bar (px). */
+const BAR_WIDTH = 4;
+/** Horizontal gap between adjacent bars (px). */
+const BAR_GAP = 2;
+/** Corner radius of a bar (px). */
+const BAR_RADIUS = 1;
+/** Corner radius of the chip container (px). */
+const CHIP_RADIUS = 8;
+/** Gap between the bars and the level label (px). */
+const LABEL_GAP = 6;
+
 export interface ConnectionQualityIndicatorProps {
   /**
    * Optional stats provider (RTT/loss). Absent until DMY-45 wires the media
@@ -146,14 +157,11 @@ function ConnectionQualityIndicator({
           testID="connection-quality-warning"
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
-          style={[
-            styles.warning,
-            {
-              color: theme.colors.danger,
-              fontSize: theme.typography.fontSizes.xs,
-              marginTop: theme.spacing.xs,
-            },
-          ]}
+          style={{
+            color: theme.colors.danger,
+            fontSize: theme.typography.fontSizes.xs,
+            marginTop: theme.spacing.xs,
+          }}
         >
           {t('connectionQuality.warning')}
         </Text>
@@ -169,21 +177,20 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    borderRadius: 8,
+    borderRadius: CHIP_RADIUS,
   },
   bars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
   },
   bar: {
-    width: 4,
-    marginRight: 2,
-    borderRadius: 1,
+    width: BAR_WIDTH,
+    marginRight: BAR_GAP,
+    borderRadius: BAR_RADIUS,
   },
   label: {
-    marginLeft: 6,
+    marginLeft: LABEL_GAP,
   },
-  warning: {},
 });
 
 export default ConnectionQualityIndicator;
