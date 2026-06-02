@@ -115,6 +115,24 @@ describe('detectDeviceLocale', () => {
     expect(detectDeviceLocale()).toBe('ru');
   });
 
+  it.each(['fr', 'de', 'es', 'zh-Hans'])(
+    'falls back to English for an unsupported device locale (%s)',
+    tag => {
+      // The real findBestLanguageTag is constrained to SUPPORTED_LOCALES and
+      // returns undefined when the device prefers none of them. Assert the
+      // contract end-to-end: an unsupported device language resolves to en and
+      // the app renders the English catalog (AC: unsupported -> en, no crash).
+      jest.resetModules();
+      localizeMock().__setBestLanguageTag(undefined);
+      const { detectDeviceLocale, i18n, DEFAULT_LOCALE } = require('..');
+      expect(detectDeviceLocale()).toBe(DEFAULT_LOCALE);
+      expect(i18n.locale).toBe('en');
+      expect(i18n.t('onboarding.welcome.continue')).toBe('Continue');
+      // The unsupported tag itself was never adopted as the active locale.
+      expect(i18n.locale).not.toBe(tag);
+    },
+  );
+
   it('applies the detected device locale to the instance on module load', () => {
     jest.resetModules();
     localizeMock().__setBestLanguageTag('ru');

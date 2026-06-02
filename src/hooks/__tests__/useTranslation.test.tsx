@@ -56,4 +56,24 @@ describe('useTranslation', () => {
     // Sanity: same as a direct instance call.
     expect(i18n.t('about.version', { version: '9.9.9' })).toBe('Version 9.9.9');
   });
+
+  it('interpolates through the hook in both locales and updates on switch', () => {
+    // about.version = "Version {{version}}" / "Версия {{version}}". This is the
+    // path screens actually use, so prove interpolation survives a runtime
+    // locale switch in the consuming component (AC step 5: interpolation in
+    // both locales).
+    setLocale('en');
+    function VersionProbe() {
+      const { t } = useTranslation();
+      return <Text testID="ver">{t('about.version', { version: '1.2.3' })}</Text>;
+    }
+    render(<VersionProbe />);
+    expect(screen.getByTestId('ver')).toHaveTextContent('Version 1.2.3');
+
+    act(() => {
+      setLocale('ru');
+    });
+
+    expect(screen.getByTestId('ver')).toHaveTextContent('Версия 1.2.3');
+  });
 });
