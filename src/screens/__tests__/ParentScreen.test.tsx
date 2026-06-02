@@ -81,6 +81,69 @@ describe('ParentScreen — audio route toggle (DMY-55)', () => {
     ).toBe(true);
   });
 
+  it('routes every available route (speaker/earpiece/bluetooth) through setRoute', () => {
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    // Bluetooth available so all three segments render and are selectable.
+    const playback = fakePlayback(true);
+    renderParent(playback);
+
+    // Start on the default (speaker); press the other two then back to speaker
+    // to exercise the speaker arg explicitly (AC: each of 3 routes -> setRoute).
+    fireEvent.press(screen.getByTestId('audio-route-earpiece'));
+    fireEvent.press(screen.getByTestId('audio-route-bluetooth'));
+    fireEvent.press(screen.getByTestId('audio-route-speaker'));
+
+    expect(playback.setRoute).toHaveBeenNthCalledWith(1, 'earpiece');
+    expect(playback.setRoute).toHaveBeenNthCalledWith(2, 'bluetooth');
+    expect(playback.setRoute).toHaveBeenNthCalledWith(3, 'speaker');
+    // Final selection reflected as the active segment.
+    expect(
+      screen.getByTestId('audio-route-speaker').props.accessibilityState
+        .selected,
+    ).toBe(true);
+  });
+
+  it('re-routes when the already-selected route is pressed again (idempotent UX)', () => {
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    const playback = fakePlayback();
+    renderParent(playback);
+
+    // Default selection is speaker; press speaker again.
+    expect(
+      screen.getByTestId('audio-route-speaker').props.accessibilityState
+        .selected,
+    ).toBe(true);
+    fireEvent.press(screen.getByTestId('audio-route-speaker'));
+
+    // Still forwarded to the controller (a no-op switch is the controller's
+    // concern) and selection unchanged — no crash, no stale state.
+    expect(playback.setRoute).toHaveBeenCalledWith('speaker');
+    expect(
+      screen.getByTestId('audio-route-speaker').props.accessibilityState
+        .selected,
+    ).toBe(true);
+  });
+
+  it('handles rapid route switching without losing the final selection', () => {
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    const playback = fakePlayback(true);
+    renderParent(playback);
+
+    // Fire a burst of switches back to back.
+    fireEvent.press(screen.getByTestId('audio-route-earpiece'));
+    fireEvent.press(screen.getByTestId('audio-route-bluetooth'));
+    fireEvent.press(screen.getByTestId('audio-route-speaker'));
+    fireEvent.press(screen.getByTestId('audio-route-earpiece'));
+
+    expect(playback.setRoute).toHaveBeenCalledTimes(4);
+    // The last press wins.
+    expect(playback.setRoute).toHaveBeenLastCalledWith('earpiece');
+    expect(
+      screen.getByTestId('audio-route-earpiece').props.accessibilityState
+        .selected,
+    ).toBe(true);
+  });
+
   it('offers Bluetooth only when the controller reports it available', () => {
     act(() => useAppStore.setState({ connectionStatus: 'connected' }));
 
@@ -89,6 +152,33 @@ describe('ParentScreen — audio route toggle (DMY-55)', () => {
 
     rerender(<ParentScreen {...navProps} playback={fakePlayback(true)} />);
     expect(screen.getByTestId('audio-route-bluetooth')).toBeTruthy();
+  });
+
+  it('does not crash or surface a rejection when setRoute rejects async', async () => {
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    const playback = fakePlayback();
+    // Simulate a native session that rejects mid-switch (e.g. BT dropped). The
+    // screen fires setRoute fire-and-forget; createSafeAudioPlayback absorbs the
+    // rejected promise, so nothing here can crash or leave a dangling rejection.
+    (playback.setRoute as jest.Mock).mockReturnValue(
+      Promise.reject(new Error('native route switch failed')),
+    );
+    renderParent(playback);
+
+    expect(() =>
+      fireEvent.press(screen.getByTestId('audio-route-earpiece')),
+    ).not.toThrow();
+    // The selection still applies optimistically in the UI.
+    expect(
+      screen.getByTestId('audio-route-earpiece').props.accessibilityState
+        .selected,
+    ).toBe(true);
+    // Flush microtasks; if the rejection were not swallowed by the wrapper this
+    // would log an unhandled rejection and fail the suite.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 
   it('falls back to a safe no-op controller when none is injected', () => {

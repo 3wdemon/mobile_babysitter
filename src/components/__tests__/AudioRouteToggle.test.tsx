@@ -57,11 +57,28 @@ describe('AudioRouteToggle', () => {
       />,
     );
 
+    fireEvent.press(screen.getByTestId('audio-route-speaker'));
+    expect(onSelectRoute).toHaveBeenCalledWith('speaker');
+
     fireEvent.press(screen.getByTestId('audio-route-earpiece'));
     expect(onSelectRoute).toHaveBeenCalledWith('earpiece');
 
     fireEvent.press(screen.getByTestId('audio-route-bluetooth'));
     expect(onSelectRoute).toHaveBeenCalledWith('bluetooth');
+  });
+
+  it('still fires onSelectRoute when the already-selected route is pressed', () => {
+    const onSelectRoute = jest.fn();
+    render(
+      <AudioRouteToggle
+        selectedRoute="speaker"
+        availableRoutes={availableRoutesFor(true)}
+        onSelectRoute={onSelectRoute}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('audio-route-speaker'));
+    expect(onSelectRoute).toHaveBeenCalledWith('speaker');
   });
 
   it('reflects the selected route in accessibilityState + a11y label', () => {
