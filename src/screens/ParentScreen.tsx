@@ -11,6 +11,9 @@
  * When the setting is off (the default), the gate is a transparent pass-through
  * and behaviour is unchanged.
  */
+import { StyleSheet, View } from 'react-native';
+
+import OfflineIndicator from '../components/OfflineIndicator';
 import ParentModeGate from '../features/auth/ParentModeGate';
 import ParentPairingScreen from '../features/pairing/screens/ParentPairingScreen';
 import type { RootStackScreenProps } from '../navigation/types';
@@ -18,9 +21,24 @@ import type { RootStackScreenProps } from '../navigation/types';
 function ParentScreen(_props: RootStackScreenProps<'Parent'>) {
   return (
     <ParentModeGate>
-      <ParentPairingScreen />
+      <View style={styles.root}>
+        {/* Top banner; renders nothing while online (DMY-60). */}
+        <OfflineIndicator />
+        <View style={styles.body}>
+          <ParentPairingScreen />
+        </View>
+      </View>
     </ParentModeGate>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  body: {
+    flex: 1,
+  },
+});
 
 export default ParentScreen;

@@ -101,6 +101,14 @@ jest.mock('react-native-webrtc');
 // touching native code.
 jest.mock('react-native-localize');
 
+// @react-native-community/netinfo (DMY-60) reads connectivity through a native
+// module with no JS fallback under Jest. Use the manual mock in
+// __mocks__/@react-native-community/netinfo.ts (defaults to a connected wifi
+// state; drive transitions via __emit / __setFetch / __reset) so any test that
+// mounts a screen — which builds the real network source — runs without
+// touching native code.
+jest.mock('@react-native-community/netinfo');
+
 // react-native-bootsplash (DMY-58) bridges to the native iOS storyboard /
 // Android SplashScreen window with no JS fallback under Jest. Use the manual
 // mock in __mocks__/react-native-bootsplash.ts (inert spies) so any test that

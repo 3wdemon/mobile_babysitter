@@ -15,6 +15,7 @@
  */
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import OfflineIndicator from '../components/OfflineIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { PowerSaverIndicator, usePowerSaver } from '../features/powersaver';
 import BabyPairingScreen from '../features/pairing/screens/BabyPairingScreen';
@@ -36,6 +37,8 @@ function BabyScreen(_props: RootStackScreenProps<'Baby'>) {
       style={{ backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.content}
     >
+      {/* Top banner; dark palette to match the baby-unit face (DMY-60). */}
+      <OfflineIndicator mode="dark" />
       <BabyPairingScreen />
       <View style={[styles.footer, { padding: theme.spacing.lg }]}>
         <PowerSaverIndicator active={active} />
