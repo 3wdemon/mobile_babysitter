@@ -109,6 +109,14 @@ jest.mock('react-native-localize');
 // touching native code.
 jest.mock('@react-native-community/netinfo');
 
+// react-native-device-info (DMY-54) reads battery level / charging through a
+// native module with no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-device-info.ts (defaults to a healthy unplugged state;
+// drive transitions via __emitPowerState / __setBattery / __reset) so any test
+// that mounts the baby screen — which builds the real battery source — runs
+// without touching native code.
+jest.mock('react-native-device-info');
+
 // react-native-bootsplash (DMY-58) bridges to the native iOS storyboard /
 // Android SplashScreen window with no JS fallback under Jest. Use the manual
 // mock in __mocks__/react-native-bootsplash.ts (inert spies) so any test that

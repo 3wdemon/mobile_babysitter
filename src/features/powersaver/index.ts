@@ -14,6 +14,19 @@ export {
 export { usePowerSaver } from './usePowerSaver';
 export { default as PowerSaverIndicator } from './PowerSaverIndicator';
 export {
+  LOW_BATTERY_THRESHOLD,
+  UNKNOWN_BATTERY_STATE,
+  noopBatterySource,
+  computeIsLow,
+  makeBatteryState,
+  normalizeLevel,
+  mapPowerState,
+  createSourceFromDeviceInfo,
+  createBatterySource,
+  getBatterySource,
+  __setBatterySource,
+} from './batteryStatus';
+export {
   DIM_BRIGHTNESS,
   DEFAULT_RESTORE_BRIGHTNESS,
   clampBrightness,
@@ -25,3 +38,9 @@ export type {
   PowerSaverBackend,
   PowerSaverSnapshot,
 } from './types';
+export type {
+  BatteryState,
+  BatteryListener,
+  BatterySource,
+  DeviceInfoLike,
+} from './batteryStatus';
