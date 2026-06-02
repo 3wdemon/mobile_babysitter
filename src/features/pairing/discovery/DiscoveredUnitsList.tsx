@@ -8,6 +8,11 @@
  * {@link useDiscoveredUnits} (the screen owns it) and the pairing side effect
  * lives in the scanner hook (same `paired` flow as the QR path).
  *
+ * Three-way state (DMY-59), driven by `scanning` / `settled` / `units`:
+ *  - browsing with nothing resolved yet -> shared {@link LoadingState};
+ *  - browse settled with zero units     -> shared {@link EmptyState} + guidance;
+ *  - one or more units                  -> the tappable list.
+ *
  * Honest scope: tapping a unit records `paired` (sessionId), it does NOT open a
  * media connection — WebRTC signalling is DMY-16/18.
  *
@@ -15,14 +20,23 @@
  */
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import EmptyState from '../../../components/EmptyState';
+import LoadingState from '../../../components/LoadingState';
 import { useTheme } from '../../../hooks/useTheme';
 import type { DiscoveredBabyUnit } from './types';
 
 export interface DiscoveredUnitsListProps {
   /** Resolved baby-units to show (from useDiscoveredUnits). */
   readonly units: readonly DiscoveredBabyUnit[];
-  /** Whether a browse is currently active (drives the empty-state copy). */
+  /** Whether a browse is currently active (drives the loading state). */
   readonly scanning: boolean;
+  /**
+   * Whether the browse has settled (a unit resolved, or the grace window
+   * elapsed). While `scanning && !settled` with no units we show the loading
+   * state; once `settled` with no units we show the empty state. Defaults to
+   * `true` so older callers that have units (or no scan) behave as before.
+   */
+  readonly settled?: boolean;
   /** Called with the chosen unit's sessionId when the user taps it. */
   readonly onSelect: (sessionId: string) => void;
 }
@@ -30,9 +44,14 @@ export interface DiscoveredUnitsListProps {
 function DiscoveredUnitsList({
   units,
   scanning,
+  settled = true,
   onSelect,
 }: DiscoveredUnitsListProps) {
   const theme = useTheme();
+
+  const hasUnits = units.length > 0;
+  // Loading: actively browsing, nothing resolved yet, and not settled.
+  const loading = !hasUnits && scanning && !settled;
 
   return (
     <View testID="discovered-units" style={styles.container}>
@@ -46,26 +65,12 @@ function DiscoveredUnitsList({
             fontWeight: theme.typography.fontWeights.semibold,
             marginBottom: theme.spacing.sm,
           },
-        ]}>
+        ]}
+      >
         Baby units on this network
       </Text>
 
-      {units.length === 0 ? (
-        <Text
-          testID="discovered-empty"
-          style={[
-            styles.empty,
-            {
-              color: theme.colors.textMuted,
-              fontSize: theme.typography.fontSizes.sm,
-              lineHeight: theme.typography.lineHeights.sm,
-            },
-          ]}>
-          {scanning
-            ? 'Looking for baby units on your Wi-Fi… or scan the QR code below.'
-            : 'Network discovery is off. Scan the QR code below to pair.'}
-        </Text>
-      ) : (
+      {hasUnits ? (
         units.map(unit => (
           <TouchableOpacity
             key={unit.name}
@@ -82,7 +87,8 @@ function DiscoveredUnitsList({
                 paddingHorizontal: theme.spacing.lg,
                 marginBottom: theme.spacing.sm,
               },
-            ]}>
+            ]}
+          >
             <Text
               style={[
                 styles.rowTitle,
@@ -91,7 +97,8 @@ function DiscoveredUnitsList({
                   fontSize: theme.typography.fontSizes.md,
                   fontWeight: theme.typography.fontWeights.semibold,
                 },
-              ]}>
+              ]}
+            >
               {unit.name}
             </Text>
             <Text
@@ -102,11 +109,30 @@ function DiscoveredUnitsList({
                   fontSize: theme.typography.fontSizes.xs,
                   lineHeight: theme.typography.lineHeights.xs,
                 },
-              ]}>
+              ]}
+            >
               Tap to pair over Wi-Fi
             </Text>
           </TouchableOpacity>
         ))
+      ) : loading ? (
+        <LoadingState
+          testID="discovered-loading"
+          message="Looking for baby units on your Wi-Fi…"
+        />
+      ) : (
+        <EmptyState
+          testID="discovered-empty"
+          icon="📡"
+          title={
+            scanning ? 'No baby units found yet' : 'Network discovery is off'
+          }
+          description={
+            scanning
+              ? 'Make sure the baby phone is on the same Wi-Fi and showing its pairing screen, or scan the QR code below.'
+              : 'Scan the QR code below to pair this parent unit.'
+          }
+        />
       )}
     </View>
   );
@@ -117,9 +143,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   heading: {},
-  empty: {
-    textAlign: 'center',
-  },
   row: {
     width: '100%',
     borderWidth: StyleSheet.hairlineWidth,

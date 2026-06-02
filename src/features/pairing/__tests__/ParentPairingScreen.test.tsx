@@ -25,21 +25,17 @@ const mockRequestMultiple = requestMultiple as jest.MockedFunction<
 
 // Test-only helpers live on the manual mock (__mocks__/react-native-vision-camera);
 // they are not part of the real module's public types, so reach them via the mock.
-const {
-  __emitScan,
-  __resetVisionCameraMock,
-  __setMockDevice,
-} = jest.requireMock('react-native-vision-camera') as {
-  __emitScan: (value: string) => void;
-  __resetVisionCameraMock: () => void;
-  __setMockDevice: (device: unknown) => void;
-};
+const { __emitScan, __resetVisionCameraMock, __setMockDevice } =
+  jest.requireMock('react-native-vision-camera') as {
+    __emitScan: (value: string) => void;
+    __resetVisionCameraMock: () => void;
+    __setMockDevice: (device: unknown) => void;
+  };
 
 // Test-only helpers on the zeroconf mock to drive mDNS discovery (DMY-7).
-const {
-  __emitResolved,
-  __resetZeroconfMock,
-} = jest.requireMock('react-native-zeroconf') as {
+const { __emitResolved, __resetZeroconfMock } = jest.requireMock(
+  'react-native-zeroconf',
+) as {
   __emitResolved: (service: unknown) => void;
   __resetZeroconfMock: () => void;
 };
@@ -152,7 +148,10 @@ describe('ParentPairingScreen', () => {
 
   it('shows an expired-code error on a stale QR', async () => {
     const stale = serializePairingPayload(
-      createPairingPayload(undefined, Date.now() - PAIRING_PAYLOAD_TTL_MS - 5000),
+      createPairingPayload(
+        undefined,
+        Date.now() - PAIRING_PAYLOAD_TTL_MS - 5000,
+      ),
     );
     render(<ParentPairingScreen />);
     await act(async () => {
@@ -201,8 +200,9 @@ describe('ParentPairingScreen', () => {
       fireEvent.press(screen.getByTestId('camera-permission-action'));
     });
 
-    // Initially the discovery list is empty (scanning).
-    expect(screen.getByTestId('discovered-empty')).toBeTruthy();
+    // Initially the discovery list shows the loading state (scanning, not yet
+    // settled — DMY-59).
+    expect(screen.getByTestId('discovered-loading')).toBeTruthy();
 
     // A baby-unit resolves on the LAN.
     act(() => {

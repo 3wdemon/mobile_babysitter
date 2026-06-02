@@ -106,8 +106,65 @@ describe('useDiscoveredUnits (parent)', () => {
 
   it('does not browse when disabled', () => {
     const fake = createFakeBackend();
-    renderHook(() => useDiscoveredUnits({ backend: fake.backend, enabled: false }));
+    renderHook(() =>
+      useDiscoveredUnits({ backend: fake.backend, enabled: false }),
+    );
     expect(fake.calls.scan).toBe(0);
+  });
+
+  it('settles immediately when a unit resolves (DMY-59)', () => {
+    const fake = createFakeBackend();
+    const sid = generateSessionId();
+    const { result } = renderHook(() =>
+      useDiscoveredUnits({ backend: fake.backend, settleMs: 10_000 }),
+    );
+
+    // Browsing, nothing resolved, grace window not elapsed -> not settled.
+    expect(result.current.settled).toBe(false);
+
+    act(() => fake.emitResolved(resolved(sid)));
+    expect(result.current.settled).toBe(true);
+  });
+
+  it('settles after the grace window with 0 units (DMY-59)', () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createFakeBackend();
+      const { result } = renderHook(() =>
+        useDiscoveredUnits({ backend: fake.backend, settleMs: 2500 }),
+      );
+
+      expect(result.current.settled).toBe(false);
+
+      act(() => {
+        jest.advanceTimersByTime(2500);
+      });
+
+      expect(result.current.settled).toBe(true);
+      expect(result.current.units).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('is never settled while disabled (DMY-59)', () => {
+    jest.useFakeTimers();
+    try {
+      const fake = createFakeBackend();
+      const { result } = renderHook(() =>
+        useDiscoveredUnits({
+          backend: fake.backend,
+          enabled: false,
+          settleMs: 1,
+        }),
+      );
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(result.current.settled).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
