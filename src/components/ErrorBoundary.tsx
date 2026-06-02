@@ -14,6 +14,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 
 import { logger } from '../services/logger';
 import ErrorFallback from './ErrorFallback';
+import { hideBootSplash } from './Splash';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
@@ -47,6 +48,13 @@ class ErrorBoundary extends Component<
     logger.error('ErrorBoundary caught an error', error, {
       componentStack: info.componentStack,
     });
+
+    // DMY-58: hide the native bootsplash on the error path too. The normal hide
+    // is wired to NavigationContainer's `onReady`, which never fires if the
+    // navigator throws on first render — without this the native splash would
+    // sit on top of the fallback forever. `hideBootSplash` is idempotent, so
+    // this is safe even when the onReady hide already ran.
+    hideBootSplash();
   }
 
   reset = (): void => {

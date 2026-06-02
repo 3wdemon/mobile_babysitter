@@ -3,6 +3,7 @@
  */
 import { Text, TouchableOpacity } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import BootSplash from 'react-native-bootsplash';
 
 import ErrorBoundary from '../ErrorBoundary';
 import { logger } from '../../services/logger';
@@ -14,6 +15,8 @@ jest.mock('../../services/logger', () => ({
 }));
 
 const mockedLoggerError = logger.error as jest.Mock;
+// react-native-bootsplash is mocked globally (__mocks__/react-native-bootsplash).
+const hideMock = BootSplash.hide as jest.Mock;
 
 /**
  * Test helper: throws on render the first time, then renders its children once
@@ -37,6 +40,7 @@ describe('ErrorBoundary', () => {
 
   beforeEach(() => {
     mockedLoggerError.mockClear();
+    hideMock.mockClear();
     // React logs caught render errors via console.error; silence it so the
     // expected failure does not pollute the test output.
     consoleErrorSpy = jest
@@ -67,6 +71,21 @@ describe('ErrorBoundary', () => {
 
     expect(screen.getByText('Something went wrong')).toBeTruthy();
     expect(screen.getByRole('button')).toBeTruthy();
+  });
+
+  it('hides the native bootsplash when a child throws on first render', () => {
+    // Regression (DMY-58): the splash is normally hidden via
+    // NavigationContainer.onReady, which never fires if the navigator throws on
+    // first render. componentDidCatch must hide it too so the native splash does
+    // not sit on top of the fallback forever.
+    render(
+      <ErrorBoundary>
+        <Boom shouldThrow />
+      </ErrorBoundary>,
+    );
+
+    expect(hideMock).toHaveBeenCalledTimes(1);
+    expect(hideMock).toHaveBeenCalledWith({ fade: true });
   });
 
   it('logs the error and component stack via logger.error (not console)', () => {
