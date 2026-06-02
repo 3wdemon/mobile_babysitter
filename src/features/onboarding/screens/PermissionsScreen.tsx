@@ -14,44 +14,30 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { usePermissions } from '../usePermissions';
 import type { AppPermission, PermissionStatus, OnboardingScreenProps } from '../types';
 
-/** Per-permission rationale copy shown on the screen. */
-const PERMISSION_COPY: ReadonlyArray<{
-  key: AppPermission;
-  title: string;
-  body: string;
-}> = [
-  {
-    key: 'camera',
-    title: 'Camera',
-    body: 'Streams live video of your baby to the parent phone — peer-to-peer and encrypted, never uploaded.',
-  },
-  {
-    key: 'microphone',
-    title: 'Microphone',
-    body: 'Lets you hear your baby and powers on-device cry detection. Audio stays between your devices.',
-  },
-  {
-    key: 'notifications',
-    title: 'Notifications',
-    body: 'Alerts you about crying or movement even when the app is in the background.',
-  },
+/**
+ * Permissions shown on the screen, in display order. Each key doubles as its
+ * catalog key under `onboarding.permissions.items.*` (DMY-63); the rationale
+ * copy lives in the locale catalogs.
+ */
+const PERMISSION_KEYS: ReadonlyArray<AppPermission> = [
+  'camera',
+  'microphone',
+  'notifications',
 ];
-
-/** Human-readable label for a permission status, shown inline after a request. */
-const STATUS_LABEL: Record<PermissionStatus, string> = {
-  granted: 'Granted',
-  denied: 'Not granted',
-  blocked: 'Blocked — enable in Settings',
-  unavailable: 'Unavailable on this device',
-};
 
 function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>) {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { statuses, requesting, request } = usePermissions();
   const [hasRequested, setHasRequested] = useState(false);
+
+  /** Localised label for a permission status, shown inline after a request. */
+  const statusLabel = (status: PermissionStatus): string =>
+    t(`onboarding.permissions.status.${status}`);
 
   const onRequest = async () => {
     await request();
@@ -100,7 +86,7 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
               marginBottom: theme.spacing.sm,
             },
           ]}>
-          A few permissions
+          {t('onboarding.permissions.title')}
         </Text>
 
         <Text
@@ -113,13 +99,12 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
               marginBottom: theme.spacing.xl,
             },
           ]}>
-          We only ask for what the monitor needs. You can change any of these
-          later, and you can continue even if you skip them now.
+          {t('onboarding.permissions.subtitle')}
         </Text>
 
-        {PERMISSION_COPY.map(item => (
+        {PERMISSION_KEYS.map(key => (
           <View
-            key={item.key}
+            key={key}
             style={[
               styles.card,
               {
@@ -141,7 +126,7 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
                   marginBottom: theme.spacing.xs,
                 },
               ]}>
-              {item.title}
+              {t(`onboarding.permissions.items.${key}.title`)}
             </Text>
             <Text
               style={[
@@ -152,24 +137,25 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
                   lineHeight: theme.typography.lineHeights.sm,
                 },
               ]}>
-              {item.body}
+              {t(`onboarding.permissions.items.${key}.body`)}
             </Text>
             {hasRequested && (
               <Text
-                accessibilityLabel={`${item.title} status: ${
-                  STATUS_LABEL[statuses[item.key]]
-                }`}
+                accessibilityLabel={t('onboarding.permissions.statusA11y', {
+                  title: t(`onboarding.permissions.items.${key}.title`),
+                  status: statusLabel(statuses[key]),
+                })}
                 style={[
                   styles.statusLabel,
                   {
-                    color: statusColor(statuses[item.key]),
+                    color: statusColor(statuses[key]),
                     fontSize: theme.typography.fontSizes.xs,
                     fontWeight: theme.typography.fontWeights.medium,
                     lineHeight: theme.typography.lineHeights.xs,
                     marginTop: theme.spacing.sm,
                   },
                 ]}>
-                {STATUS_LABEL[statuses[item.key]]}
+                {statusLabel(statuses[key])}
               </Text>
             )}
           </View>
@@ -208,7 +194,9 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
                   fontWeight: theme.typography.fontWeights.semibold,
                 },
               ]}>
-              {requesting ? 'Requesting…' : 'Allow access'}
+              {requesting
+                ? t('onboarding.permissions.requesting')
+                : t('onboarding.permissions.allowAccess')}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -232,7 +220,7 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
                   fontWeight: theme.typography.fontWeights.semibold,
                 },
               ]}>
-              Continue
+              {t('onboarding.permissions.continue')}
             </Text>
           </TouchableOpacity>
         )}
@@ -251,7 +239,7 @@ function PermissionsScreen({ navigation }: OnboardingScreenProps<'Permissions'>)
                   lineHeight: theme.typography.lineHeights.sm,
                 },
               ]}>
-              Skip for now
+              {t('onboarding.permissions.skip')}
             </Text>
           </TouchableOpacity>
         )}

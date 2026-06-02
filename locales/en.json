@@ -1,0 +1,85 @@
+{
+  "onboarding": {
+    "welcome": {
+      "title": "Mobile Babysitter",
+      "subtitle": "A premium baby monitor that runs entirely on your phones — private by design.",
+      "highlights": {
+        "p2p": {
+          "title": "Local peer-to-peer",
+          "body": "Your two phones talk directly over your home WiFi — works even without internet."
+        },
+        "noCloud": {
+          "title": "No cloud, no accounts",
+          "body": "Audio and video never touch a server. There is nothing to hack and nothing to leak."
+        },
+        "e2e": {
+          "title": "End-to-end encrypted",
+          "body": "Every stream is encrypted between your devices, so only you can ever see or hear it."
+        }
+      },
+      "continue": "Continue"
+    },
+    "permissions": {
+      "title": "A few permissions",
+      "subtitle": "We only ask for what the monitor needs. You can change any of these later, and you can continue even if you skip them now.",
+      "items": {
+        "camera": {
+          "title": "Camera",
+          "body": "Streams live video of your baby to the parent phone — peer-to-peer and encrypted, never uploaded."
+        },
+        "microphone": {
+          "title": "Microphone",
+          "body": "Lets you hear your baby and powers on-device cry detection. Audio stays between your devices."
+        },
+        "notifications": {
+          "title": "Notifications",
+          "body": "Alerts you about crying or movement even when the app is in the background."
+        }
+      },
+      "status": {
+        "granted": "Granted",
+        "denied": "Not granted",
+        "blocked": "Blocked — enable in Settings",
+        "unavailable": "Unavailable on this device"
+      },
+      "statusA11y": "{{title}} status: {{status}}",
+      "requesting": "Requesting…",
+      "allowAccess": "Allow access",
+      "continue": "Continue",
+      "skip": "Skip for now"
+    },
+    "roleSelect": {
+      "title": "What is this phone for?",
+      "subtitle": "You can change this any time before pairing.",
+      "options": {
+        "baby": {
+          "title": "Baby unit",
+          "body": "Leave this phone with your baby. It streams audio and video to the parent phone."
+        },
+        "parent": {
+          "title": "Parent unit",
+          "body": "Keep this phone with you. It watches and listens, and alerts you about crying or movement."
+        }
+      }
+    }
+  },
+  "about": {
+    "version": "Version {{version}}",
+    "versionA11y": "Version {{version}}",
+    "tagline": "Privacy-first baby monitor. Peer-to-peer, no cloud, no account.",
+    "privacyLink": "Privacy Policy",
+    "privacyLinkA11y": "Open the privacy policy"
+  },
+  "privacyPolicy": {
+    "bannerA11y": "This privacy policy is a placeholder. Final legal text is coming soon.",
+    "banner": "PLACEHOLDER — final legal text coming soon.",
+    "title": "Privacy Policy",
+    "intro": "Mobile Babysitter is privacy-first by design. The points below summarise how the app works.",
+    "points": {
+      "p2p": "Peer-to-peer: video and audio stream directly between your two phones.",
+      "noCloud": "No cloud: your stream is never uploaded to or stored on our servers.",
+      "noAccount": "No account: there is no sign-up, no login, and no email required."
+    },
+    "footnote": "This text is a placeholder and does not constitute the final, legally binding privacy policy."
+  }
+}

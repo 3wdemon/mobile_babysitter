@@ -13,25 +13,22 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../hooks/useTheme';
+import { useTranslation } from '../hooks/useTranslation';
 
-/** Placeholder privacy bullets. Final legal text TBD (DMY-64 follow-up). */
-const PRIVACY_POINTS: ReadonlyArray<{ key: string; text: string }> = [
-  {
-    key: 'p2p',
-    text: 'Peer-to-peer: video and audio stream directly between your two phones.',
-  },
-  {
-    key: 'no-cloud',
-    text: 'No cloud: your stream is never uploaded to or stored on our servers.',
-  },
-  {
-    key: 'no-account',
-    text: 'No account: there is no sign-up, no login, and no email required.',
-  },
+/**
+ * Placeholder privacy bullets. Final legal text TBD (DMY-64 follow-up). Each
+ * entry pairs the stable testID suffix with its catalog key under
+ * `privacyPolicy.points.*` (DMY-63); the copy lives in the locale catalogs.
+ */
+const PRIVACY_POINTS: ReadonlyArray<{ testId: string; key: string }> = [
+  { testId: 'p2p', key: 'p2p' },
+  { testId: 'no-cloud', key: 'noCloud' },
+  { testId: 'no-account', key: 'noAccount' },
 ];
 
 function PrivacyPolicyScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <ScrollView
@@ -42,7 +39,7 @@ function PrivacyPolicyScreen() {
       <View
         testID="placeholder-banner"
         accessibilityRole="alert"
-        accessibilityLabel="This privacy policy is a placeholder. Final legal text is coming soon."
+        accessibilityLabel={t('privacyPolicy.bannerA11y')}
         style={[
           styles.banner,
           {
@@ -61,7 +58,7 @@ function PrivacyPolicyScreen() {
               fontWeight: theme.typography.fontWeights.semibold,
             },
           ]}>
-          PLACEHOLDER — final legal text coming soon.
+          {t('privacyPolicy.banner')}
         </Text>
       </View>
 
@@ -76,7 +73,7 @@ function PrivacyPolicyScreen() {
             marginTop: theme.spacing.lg,
           },
         ]}>
-        Privacy Policy
+        {t('privacyPolicy.title')}
       </Text>
 
       <Text
@@ -89,15 +86,14 @@ function PrivacyPolicyScreen() {
             marginTop: theme.spacing.sm,
           },
         ]}>
-        Mobile Babysitter is privacy-first by design. The points below summarise
-        how the app works.
+        {t('privacyPolicy.intro')}
       </Text>
 
       <View style={{ marginTop: theme.spacing.lg }}>
         {PRIVACY_POINTS.map(point => (
           <View
-            key={point.key}
-            testID={`privacy-point-${point.key}`}
+            key={point.testId}
+            testID={`privacy-point-${point.testId}`}
             style={[styles.point, { marginBottom: theme.spacing.md }]}>
             <Text
               accessibilityElementsHidden
@@ -122,7 +118,7 @@ function PrivacyPolicyScreen() {
                   lineHeight: theme.typography.lineHeights.md,
                 },
               ]}>
-              {point.text}
+              {t(`privacyPolicy.points.${point.key}`)}
             </Text>
           </View>
         ))}
@@ -138,8 +134,7 @@ function PrivacyPolicyScreen() {
             marginTop: theme.spacing.lg,
           },
         ]}>
-        This text is a placeholder and does not constitute the final, legally
-        binding privacy policy.
+        {t('privacyPolicy.footnote')}
       </Text>
     </ScrollView>
   );

@@ -94,6 +94,13 @@ jest.mock('react-native-zeroconf');
 // PeerConnection / ctor directly through the PeerConnectionFactory seam.
 jest.mock('react-native-webrtc');
 
+// react-native-localize (DMY-63) reads device locale settings through a native
+// module with no JS fallback under Jest. Use the manual mock in
+// __mocks__/react-native-localize.ts (defaults to English; overridable via
+// __setBestLanguageTag) so the i18n service resolves a startup locale without
+// touching native code.
+jest.mock('react-native-localize');
+
 // react-native-bootsplash (DMY-58) bridges to the native iOS storyboard /
 // Android SplashScreen window with no JS fallback under Jest. Use the manual
 // mock in __mocks__/react-native-bootsplash.ts (inert spies) so any test that

@@ -11,10 +11,12 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { APP_NAME, APP_VERSION } from '../constants/appInfo';
 import { useTheme } from '../hooks/useTheme';
+import { useTranslation } from '../hooks/useTranslation';
 import type { RootStackScreenProps } from '../navigation/types';
 
 function AboutScreen({ navigation }: RootStackScreenProps<'About'>) {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <View
@@ -42,7 +44,7 @@ function AboutScreen({ navigation }: RootStackScreenProps<'About'>) {
 
       <Text
         testID="about-version"
-        accessibilityLabel={`Version ${APP_VERSION}`}
+        accessibilityLabel={t('about.versionA11y', { version: APP_VERSION })}
         style={[
           styles.version,
           {
@@ -51,7 +53,7 @@ function AboutScreen({ navigation }: RootStackScreenProps<'About'>) {
             marginTop: theme.spacing.xs,
           },
         ]}>
-        {`Version ${APP_VERSION}`}
+        {t('about.version', { version: APP_VERSION })}
       </Text>
 
       <Text
@@ -64,13 +66,13 @@ function AboutScreen({ navigation }: RootStackScreenProps<'About'>) {
             marginTop: theme.spacing.md,
           },
         ]}>
-        Privacy-first baby monitor. Peer-to-peer, no cloud, no account.
+        {t('about.tagline')}
       </Text>
 
       <TouchableOpacity
         testID="about-privacy-link"
         accessibilityRole="link"
-        accessibilityLabel="Open the privacy policy"
+        accessibilityLabel={t('about.privacyLinkA11y')}
         style={[
           styles.privacyLink,
           {
@@ -91,7 +93,7 @@ function AboutScreen({ navigation }: RootStackScreenProps<'About'>) {
               fontWeight: theme.typography.fontWeights.semibold,
             },
           ]}>
-          Privacy Policy
+          {t('about.privacyLink')}
         </Text>
       </TouchableOpacity>
     </View>
