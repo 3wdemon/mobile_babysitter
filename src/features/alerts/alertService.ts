@@ -50,7 +50,7 @@ export interface AlertServiceOptions {
 }
 
 /** Reason an incoming detection did not raise an audible alert. */
-export type AlertDropReason = 'disabled' | 'cooldown' | 'priority';
+export type AlertDropReason = 'disabled' | 'cooldown' | 'priority' | 'snoozed';
 
 /** Result of feeding one detection event into the service. */
 export interface AlertResult {
@@ -87,6 +87,14 @@ export class AlertService {
   /** The most recently raised alert (for UI), or `null`. */
   private last: AlertEvent | null = null;
 
+  /**
+   * Epoch ms until which non-safety-critical alerts are SNOOZED (muted), or
+   * `null` when not snoozed (DMY-28). Set by {@link snooze}; while a snooze is
+   * active, types that do not set `breaksThroughSnooze` (everything except
+   * `cry`) are dropped with reason `'snoozed'` and play no sound.
+   */
+  private snoozedUntil: number | null = null;
+
   constructor(options: AlertServiceOptions) {
     this.player = options.player;
     this.isEnabled = options.isEnabled ?? (() => true);
@@ -114,6 +122,13 @@ export class AlertService {
     const prev = this.lastRaisedAt.get(type);
     if (prev !== undefined && t - prev < cfg.cooldownMs) {
       return DROPPED('cooldown');
+    }
+
+    // SNOOZE (DMY-28): while snoozed, mute every type EXCEPT the ones flagged
+    // `breaksThroughSnooze` (only `cry` — safety-critical, never silenced).
+    if (this.isSnoozed(t) && !cfg.breaksThroughSnooze) {
+      logger.debug('alert: snoozed', { type });
+      return DROPPED('snoozed');
     }
 
     // PRIORITY: if something is still sounding, only a strictly-higher priority
@@ -152,11 +167,58 @@ export class AlertService {
     this.active = null;
   }
 
-  /** Clear cooldown/priority/last state. Use when (re)starting a session. */
+  /**
+   * SNOOZE (DMY-28): mute non-safety-critical alerts for `durationMs` from now.
+   *
+   * Triggered by the parent's haptic/long-press gesture on the alert indicator.
+   * While snoozed, every type that does NOT set `breaksThroughSnooze` (i.e. all
+   * but `cry`) is dropped with reason `'snoozed'` and plays no sound; `cry`
+   * still sounds so genuine distress is never masked. Any currently-sounding
+   * alert is stopped immediately so the gesture quiets the device at once.
+   *
+   * A non-positive / non-finite `durationMs` is ignored (no snooze). Calling it
+   * again replaces (not extends) the window with `now + durationMs`.
+   *
+   * @returns the epoch ms the snooze runs until, or `null` if it was ignored.
+   */
+  snooze(durationMs: number): number | null {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      return null;
+    }
+    const until = this.now() + durationMs;
+    this.snoozedUntil = until;
+    // Quiet the device immediately: stop any sounding alert and free the
+    // priority channel so the next (non-cry) event is simply muted.
+    this.player.stop();
+    this.active = null;
+    logger.info('alert: snoozed', { durationMs });
+    return until;
+  }
+
+  /** Whether alerts are currently snoozed at time `now` (default: live clock). */
+  isSnoozed(now: number = this.now()): boolean {
+    return this.snoozedUntil !== null && now < this.snoozedUntil;
+  }
+
+  /**
+   * Epoch ms the active snooze runs until, or `null` when not snoozed.
+   * Self-expiring: returns `null` once the live clock is past the window.
+   */
+  get snoozeUntil(): number | null {
+    return this.isSnoozed() ? this.snoozedUntil : null;
+  }
+
+  /** Cancel an active snooze immediately (alerts resume at once). */
+  clearSnooze(): void {
+    this.snoozedUntil = null;
+  }
+
+  /** Clear cooldown/priority/last/snooze state. Use when (re)starting a session. */
   reset(): void {
     this.lastRaisedAt.clear();
     this.active = null;
     this.last = null;
+    this.snoozedUntil = null;
   }
 }
 

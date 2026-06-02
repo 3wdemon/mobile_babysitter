@@ -27,6 +27,15 @@
  *  - VOLUME: urgent alerts louder than ambient ones (cry loudest, noise
  *    quietest). Hints only; ignored by the no-op player until DMY-9.
  *
+ * SNOOZE / CRY DECISION (DMY-28): a snooze gesture mutes the alert sounds for a
+ * short interval so the parent can settle a fussy-but-fine baby without being
+ * pestered. BUT `cry` is marked `breaksThroughSnooze: true`: a baby actually
+ * crying is the most safety-relevant signal, and silencing it on a 5-minute
+ * snooze could mask genuine distress. So cry ALWAYS sounds, even while snoozed;
+ * the other, less-urgent types (motion / no_motion / noise) are muted for the
+ * snooze window and resume automatically when it elapses. This keeps snooze
+ * useful for ambient noise/motion without ever trading away the child's safety.
+ *
  * NO_MOTION DECISION: we DO treat `no_motion` as an alert with its OWN sound.
  * Per the product-spec, "absence of movement >30s" is an explicit detection
  * signal a parent may want surfaced, and reusing the `motion` sound would be
@@ -47,7 +56,14 @@ import type { AlertType, AlertTypeConfig } from './alertTypes';
  */
 export const SOUND_BY_ALERT_TYPE: Readonly<Record<AlertType, AlertTypeConfig>> =
   Object.freeze({
-    cry: { soundId: 'alert-cry', priority: 40, cooldownMs: 5000, volume: 1.0 },
+    cry: {
+      soundId: 'alert-cry',
+      priority: 40,
+      cooldownMs: 5000,
+      volume: 1.0,
+      // Safety: a crying baby breaks through a snooze (DMY-28). Never silenced.
+      breaksThroughSnooze: true,
+    },
     no_motion: {
       soundId: 'alert-no-motion',
       priority: 30,
