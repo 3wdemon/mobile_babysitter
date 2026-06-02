@@ -224,6 +224,93 @@ describe('PermissionReRequest', () => {
     expect(onAllGranted).toHaveBeenCalledTimes(2);
   });
 
+  it('latch holds across multiple all-granted renders with fresh callbacks, both before AND after a true->false->true reset', () => {
+    // This is the genuine regression guard for the reviewer-flagged latch:
+    // it combines fresh inline callback identities (which the OLD effect deps
+    // [allGranted, onAllGranted] re-fired on) WITH a true->false->true reset.
+    // Each all-granted PHASE re-renders several times with a brand-new arrow;
+    // only the ref+latch implementation produces exactly ONE auto-fire per
+    // phase (the old code would fire on every fresh-identity render).
+    let autoFireCount = 0;
+    const fresh = () => () => {
+      autoFireCount += 1;
+    };
+
+    const grantedStatuses: PermissionStatuses = {
+      camera: 'granted',
+      microphone: 'granted',
+      notifications: 'granted',
+    };
+    const deniedStatuses: PermissionStatuses = {
+      camera: 'denied',
+      microphone: 'granted',
+      notifications: 'granted',
+    };
+
+    // Phase 1: all-granted, rendered 3x with fresh callback identities.
+    mockUsePermissions.mockReturnValue(buildHook(grantedStatuses));
+    const { rerender } = render(<PermissionReRequest onAllGranted={fresh()} />);
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    expect(autoFireCount).toBe(1);
+
+    // Reset: fall out of all-granted, rendered 2x with fresh identities.
+    mockUsePermissions.mockReturnValue(buildHook(deniedStatuses));
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    expect(autoFireCount).toBe(1);
+
+    // Phase 2: all-granted again, rendered 3x with fresh identities.
+    mockUsePermissions.mockReturnValue(buildHook(grantedStatuses));
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    rerender(<PermissionReRequest onAllGranted={fresh()} />);
+    expect(autoFireCount).toBe(2);
+  });
+
+  it('shows BOTH a Grant action (denied) and an Open-settings action (blocked) wired to the right permissions when statuses are mixed', () => {
+    const request = jest.fn().mockResolvedValue(undefined);
+    const openSettings = jest.fn().mockResolvedValue(true);
+    // camera blocked, microphone denied, notifications granted.
+    mockUsePermissions.mockReturnValue(
+      buildHook(
+        { camera: 'blocked', microphone: 'denied', notifications: 'granted' },
+        { request, openSettings },
+      ),
+    );
+
+    render(<PermissionReRequest />);
+
+    // The granted permission is not shown.
+    expect(screen.queryByText('Notifications')).not.toBeOnTheScreen();
+
+    // Blocked camera -> Open settings (NOT a Grant button); guidance is blocked copy.
+    expect(screen.getByText('Camera')).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('Open settings to enable Camera'),
+    ).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Grant Camera permission')).toBeNull();
+
+    // Denied microphone -> Grant (NOT an Open-settings button).
+    expect(screen.getByText('Microphone')).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('Grant Microphone permission'),
+    ).toBeOnTheScreen();
+    expect(
+      screen.queryByLabelText('Open settings to enable Microphone'),
+    ).toBeNull();
+
+    // Each action is wired to the correct hook method, exactly once.
+    fireEvent.press(screen.getByLabelText('Open settings to enable Camera'));
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText('Grant Microphone permission'));
+    expect(request).toHaveBeenCalledTimes(1);
+    // openSettings not called again by the Grant tap.
+    expect(openSettings).toHaveBeenCalledTimes(1);
+  });
+
   it('treats unavailable permissions as satisfied (not blocking all-granted)', () => {
     mockUsePermissions.mockReturnValue(
       buildHook({
