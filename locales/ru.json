@@ -107,6 +107,17 @@
     "a11y": "Качество связи: {{level}}",
     "warning": "Слабое соединение — связь с радионяней может прерваться."
   },
+  "audioRoute": {
+    "label": "Вывод звука",
+    "routes": {
+      "speaker": "Динамик",
+      "earpiece": "Разговорный динамик",
+      "bluetooth": "Bluetooth"
+    },
+    "optionA11y": "Выводить звук радионяни через {{label}}",
+    "selectedA11y": "{{label}}, выбрано",
+    "bluetoothUnavailable": "Нет подключённого устройства Bluetooth"
+  },
   "battery": {
     "unknown": "—",
     "charging": "заряжается",

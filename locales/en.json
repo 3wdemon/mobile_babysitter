@@ -107,6 +107,17 @@
     "a11y": "Connection quality: {{level}}",
     "warning": "Weak connection — the monitor may drop the link."
   },
+  "audioRoute": {
+    "label": "Audio output",
+    "routes": {
+      "speaker": "Speaker",
+      "earpiece": "Earpiece",
+      "bluetooth": "Bluetooth"
+    },
+    "optionA11y": "Play monitor audio through {{label}}",
+    "selectedA11y": "{{label}}, selected",
+    "bluetoothUnavailable": "No Bluetooth device connected"
+  },
   "battery": {
     "unknown": "—",
     "charging": "charging",

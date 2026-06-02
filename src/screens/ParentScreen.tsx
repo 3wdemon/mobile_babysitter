@@ -10,16 +10,71 @@
  * biometric/PIN lock in front of it when `settings.biometricLockEnabled` is on.
  * When the setting is off (the default), the gate is a transparent pass-through
  * and behaviour is unchanged.
+ *
+ * DMY-55: during an active session the parent can pick the audio OUTPUT route
+ * (speaker / earpiece / Bluetooth). The selection is driven through the
+ * {@link AudioPlayback} controller's `setRoute`; the available routes (and thus
+ * whether Bluetooth is offered) come from the controller. Until the native
+ * audio session lands (DMY-48), the controller is the safe no-op: route changes
+ * are honoured as no-ops and Bluetooth reports unavailable, so the toggle hides
+ * the Bluetooth option. The seam is ready for the real controller to drop in.
  */
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import AudioRouteToggle from '../components/AudioRouteToggle';
 import ConnectionQualityIndicator from '../components/ConnectionQualityIndicator';
 import OfflineIndicator from '../components/OfflineIndicator';
 import ParentModeGate from '../features/auth/ParentModeGate';
 import ParentPairingScreen from '../features/pairing/screens/ParentPairingScreen';
+import {
+  createSafeAudioPlayback,
+  DEFAULT_AUDIO_ROUTE,
+  type AudioPlayback,
+  type AudioRoute,
+} from '../features/webrtc';
 import type { RootStackScreenProps } from '../navigation/types';
+import { useAppStore } from '../store/useAppStore';
 
-function ParentScreen(_props: RootStackScreenProps<'Parent'>) {
+export interface ParentScreenProps extends RootStackScreenProps<'Parent'> {
+  /**
+   * Audio routing controller (DMY-55). Omit for the safe no-op (the shipped
+   * default until the native session lands in DMY-48); tests inject a fake to
+   * assert routing flows through the controller.
+   */
+  readonly playback?: AudioPlayback;
+}
+
+function ParentScreen({ playback }: ParentScreenProps) {
+  const connectionStatus = useAppStore(s => s.connectionStatus);
+  // The toggle is only meaningful once a live link exists — audio is flowing.
+  const sessionActive = connectionStatus === 'connected';
+
+  // One wrapped controller per controller identity. With no controller this is
+  // the safe no-op (Bluetooth unavailable, setRoute a no-op) until DMY-48.
+  const controller = useMemo(
+    () => createSafeAudioPlayback(playback),
+    [playback],
+  );
+  const availableRoutes = useMemo(
+    () => controller.getAvailableRoutes(),
+    [controller],
+  );
+
+  const [selectedRoute, setSelectedRoute] =
+    useState<AudioRoute>(DEFAULT_AUDIO_ROUTE);
+
+  const onSelectRoute = useCallback(
+    (route: AudioRoute) => {
+      setSelectedRoute(route);
+      // Fire-and-forget: the controller wrapper already swallows any sync/async
+      // error (a rejected promise is absorbed inside createSafeAudioPlayback), so
+      // there is nothing to await or catch here.
+      controller.setRoute(route);
+    },
+    [controller],
+  );
+
   return (
     <ParentModeGate>
       <View style={styles.root}>
@@ -35,6 +90,20 @@ function ParentScreen(_props: RootStackScreenProps<'Parent'>) {
         <View style={styles.quality}>
           <ConnectionQualityIndicator />
         </View>
+        {/*
+         * Audio output route toggle (DMY-55). Only shown during an active
+         * session — there is no audio to route otherwise. Bluetooth is offered
+         * only when the controller reports a connected device.
+         */}
+        {sessionActive ? (
+          <View style={styles.audioRoute}>
+            <AudioRouteToggle
+              selectedRoute={selectedRoute}
+              availableRoutes={availableRoutes}
+              onSelectRoute={onSelectRoute}
+            />
+          </View>
+        ) : null}
         <View style={styles.body}>
           <ParentPairingScreen />
         </View>
@@ -50,6 +119,10 @@ const styles = StyleSheet.create({
   quality: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  audioRoute: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   body: {
     flex: 1,

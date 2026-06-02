@@ -113,8 +113,17 @@ function spyPlayback(): AudioPlayback & {
   start: jest.Mock;
   stop: jest.Mock;
   setMuted: jest.Mock;
+  setRoute: jest.Mock;
 } {
-  return { start: jest.fn(), stop: jest.fn(), setMuted: jest.fn() };
+  return {
+    start: jest.fn(),
+    stop: jest.fn(),
+    setMuted: jest.fn(),
+    // DMY-55 seam additions; unused by the audio-stream lifecycle tests.
+    setRoute: jest.fn(),
+    isBluetoothAvailable: jest.fn(() => false),
+    getAvailableRoutes: jest.fn(() => ['speaker', 'earpiece'] as const),
+  };
 }
 
 async function flush(): Promise<void> {
