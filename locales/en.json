@@ -96,5 +96,76 @@
   },
   "network": {
     "offline": "No network connection — the monitor can't reach the other phone."
+  },
+  "settings": {
+    "title": "Settings",
+    "openA11y": "Open settings",
+    "sections": {
+      "appearance": "Appearance",
+      "alerts": "Alerts",
+      "detection": "Detection",
+      "privacy": "Privacy & security",
+      "power": "Power",
+      "device": "This device",
+      "permissions": "Permissions",
+      "about": "About"
+    },
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "optionA11y": "Set theme to {{label}}"
+    },
+    "alertSounds": {
+      "label": "Alert sounds",
+      "hint": "Play a sound for cry and movement alerts."
+    },
+    "noiseThreshold": {
+      "label": "Noise sensitivity",
+      "hint": "How loud a sound must be before it counts as a noise alert.",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "optionA11y": "Set noise sensitivity to {{label}}"
+    },
+    "motionSensitivity": {
+      "label": "Motion sensitivity",
+      "hint": "How much movement must occur before it counts as motion.",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "optionA11y": "Set motion sensitivity to {{label}}"
+    },
+    "biometricLock": {
+      "label": "Biometric lock",
+      "hint": "Require Face ID / fingerprint or PIN to open parent mode."
+    },
+    "powerSaver": {
+      "label": "Baby-unit power saver",
+      "hint": "Dim the screen and cut non-essential sensors during a session."
+    },
+    "audioOnly": {
+      "label": "Audio-only (parent)",
+      "hint": "Receive sound only, peeking at video on demand, to save battery."
+    },
+    "role": {
+      "label": "Role",
+      "baby": "Baby unit",
+      "parent": "Parent unit",
+      "optionA11y": "Set role to {{label}}"
+    },
+    "rePair": {
+      "label": "Re-pair devices",
+      "hint": "Forget the current pairing and scan again.",
+      "confirmTitle": "Re-pair devices?",
+      "confirmBody": "This forgets the current pairing. You will need to scan the QR code again.",
+      "confirmCta": "Re-pair",
+      "cancel": "Cancel"
+    },
+    "about": {
+      "label": "About this app",
+      "hint": "Version, privacy policy and app info."
+    }
   }
 }
