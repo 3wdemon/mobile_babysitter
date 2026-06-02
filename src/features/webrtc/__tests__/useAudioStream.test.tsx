@@ -417,6 +417,231 @@ describe('useAudioStream', () => {
     expect(pc.addAudioTrack).not.toHaveBeenCalled();
   });
 
+  // --- Two-way talk: parent→baby push-to-talk + echo cancellation (DMY-20) ---
+  describe('two-way talk (push-to-talk)', () => {
+    it('parent captures its mic with echo cancellation and publishes a DISABLED talk track', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-talk-cap');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const talk = fakeTrack('audio');
+      const stream = fakeStream([talk]);
+      const getUserMedia = jest.fn(async () => stream);
+
+      renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: { getUserMedia },
+          playback: spyPlayback(),
+          enableTalkback: true,
+        }),
+      );
+      await flush();
+
+      // Echo cancellation requested (native AEC), camera never powered up.
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+      expect(getUserMedia).toHaveBeenCalledWith({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+        video: false,
+      });
+      // The talk track was published onto the SAME peer connection...
+      expect(pc.addAudioTrack).toHaveBeenCalledTimes(1);
+      expect(pc.addedTracks[0].track).toBe(talk);
+      // ...but is DISABLED by default — nothing is transmitted until talk.
+      expect(talk.enabled).toBe(false);
+    });
+
+    it('parent does NOT capture a talk mic when talkback is disabled (one-way)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-talk-off');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const getUserMedia = jest.fn(async () =>
+        fakeStream([fakeTrack('audio')]),
+      );
+
+      renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: { getUserMedia },
+          playback: spyPlayback(),
+          // enableTalkback omitted → false
+        }),
+      );
+      await flush();
+
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(pc.addAudioTrack).not.toHaveBeenCalled();
+    });
+
+    it('startTalking enables the talk track; stopTalking disables it', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ptt');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const talk = fakeTrack('audio');
+      const { result } = renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: {
+            getUserMedia: jest.fn(async () => fakeStream([talk])),
+          },
+          playback: spyPlayback(),
+          enableTalkback: true,
+        }),
+      );
+      await flush();
+
+      // Default-off.
+      expect(result.current.talking).toBe(false);
+      expect(talk.enabled).toBe(false);
+
+      act(() => result.current.startTalking());
+      expect(result.current.talking).toBe(true);
+      expect(talk.enabled).toBe(true);
+
+      act(() => result.current.stopTalking());
+      expect(result.current.talking).toBe(false);
+      expect(talk.enabled).toBe(false);
+    });
+
+    it('baby plays the parent push-to-talk audio on a real ontrack', async () => {
+      act(() => {
+        useAppStore.getState().setRole('baby');
+        useAppStore.getState().setPaired('sess-baby-talk');
+      });
+      const { b } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const playback = spyPlayback();
+      const babyMic = fakeTrack('audio');
+      const { result } = renderHook(() =>
+        useAudioStream({
+          transport: b,
+          createPeerConnection: () => pc,
+          mediaDevices: {
+            getUserMedia: jest.fn(async () => fakeStream([babyMic])),
+          },
+          playback,
+          enableTalkback: true,
+        }),
+      );
+      await flush();
+
+      // No parent voice yet → not playing.
+      expect(result.current.playing).toBe(false);
+
+      // The parent's push-to-talk voice arrives over the same connection.
+      const parentVoice = fakeStream([fakeTrack('audio')]);
+      act(() =>
+        pc.emitTrack({ track: fakeTrack('audio'), streams: [parentVoice] }),
+      );
+
+      expect(playback.start).toHaveBeenCalledWith(parentVoice);
+      expect(result.current.playing).toBe(true);
+      expect(result.current.hasRemoteAudio).toBe(true);
+    });
+
+    it('talk controls are inert no-ops before the talk capture is ready', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-talk-inert');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      // Never resolves → controller is never acquired.
+      const getUserMedia = jest.fn(
+        () => new Promise<MediaStreamLike>(() => {}),
+      );
+      const { result } = renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: { getUserMedia },
+          playback: spyPlayback(),
+          enableTalkback: true,
+        }),
+      );
+      await flush();
+
+      // Calling the controls must not throw or fabricate a talking state.
+      act(() => result.current.startTalking());
+      expect(result.current.talking).toBe(false);
+    });
+
+    it('disposes the talk capture (stops the mic) on unmount — no leak', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-talk-cleanup');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const talk = fakeTrack('audio');
+      const { result, unmount } = renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: {
+            getUserMedia: jest.fn(async () => fakeStream([talk])),
+          },
+          playback: spyPlayback(),
+          enableTalkback: true,
+        }),
+      );
+      await flush();
+      act(() => result.current.startTalking());
+      expect(talk.stop).not.toHaveBeenCalled();
+
+      unmount();
+      // The parent talk mic was stopped — no capture leak.
+      expect(talk.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the talk capture when an active session is stopped', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-talk-stop');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const talk = fakeTrack('audio');
+      const { result } = renderHook(() =>
+        useAudioStream({
+          transport: a,
+          createPeerConnection: () => pc,
+          mediaDevices: {
+            getUserMedia: jest.fn(async () => fakeStream([talk])),
+          },
+          playback: spyPlayback(),
+          enableTalkback: true,
+          autoStart: false,
+        }),
+      );
+      await flush();
+      act(() => result.current.start());
+      await flush();
+      act(() => result.current.startTalking());
+      expect(result.current.talking).toBe(true);
+
+      act(() => result.current.stop());
+      await flush();
+      expect(talk.stop).toHaveBeenCalledTimes(1);
+      expect(result.current.talking).toBe(false);
+    });
+  });
+
   it('never logs audio content or the raw SDP', async () => {
     (globalThis as { __DEV__?: boolean }).__DEV__ = true;
     const spies = {

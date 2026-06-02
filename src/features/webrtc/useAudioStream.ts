@@ -16,6 +16,20 @@
  *    controller (`playing` flips true). `playing` is driven ONLY by a genuine
  *    remote-track arrival — never fabricated.
  *
+ * ## Two-way talk (push-to-talk, DMY-20)
+ * When `enableTalkback` is set, the path becomes bidirectional:
+ *  - the **parent** also captures its OWN microphone (with native echo
+ *    cancellation, {@link TALK_AUDIO_CONSTRAINTS}) and publishes it onto the
+ *    same peer connection, but the track is kept DISABLED by default —
+ *    push-to-talk. `startTalking()` enables it (voice flows to the baby);
+ *    `stopTalking()` disables it again. Half-duplex by construction.
+ *  - the **baby** plays the parent's incoming audio through the same
+ *    {@link AudioPlayback} controller, so the parent's voice comes out of the
+ *    baby-unit's speaker. `playing` on the baby reflects a REAL parent track.
+ * Echo cancellation is the native WebRTC AEC requested via the talk constraints;
+ * half-duplex push-to-talk (the parent mic is open only while talking) is the
+ * additional structural guard against feedback. See `talkback.ts`.
+ *
  * ## Encryption (DTLS-SRTP)
  * WebRTC media is encrypted by construction (DTLS key exchange + SRTP); there is
  * no API to send it in the clear. After negotiation the hook inspects the local
@@ -48,10 +62,12 @@ import {
   stopStream,
 } from './audioStream';
 import { createSafeAudioPlayback } from './audioPlayback';
+import { createTalkbackController, getTalkbackAudioStream } from './talkback';
 import { useSignaling } from './useSignaling';
 import type { AudioPlayback } from './audioPlayback';
 import type { MediaDevicesLike, MediaEncryptionProfile } from './mediaTypes';
 import type { PeerConnection } from './signalingTypes';
+import type { TalkbackController } from './talkback';
 import type { UseSignalingOptions, UseSignalingState } from './useSignaling';
 
 /** Options for {@link useAudioStream}. */
@@ -70,6 +86,13 @@ export interface UseAudioStreamOptions
   readonly playback?: AudioPlayback;
   /** Start muted on the parent-unit. Defaults to `false`. */
   readonly initiallyMuted?: boolean;
+  /**
+   * Enable two-way talk (parent→baby push-to-talk, DMY-20). When set, the
+   * parent also captures its microphone (with native echo cancellation) and
+   * publishes a DISABLED talk track onto the same peer connection; the baby
+   * plays the parent's incoming audio. Defaults to `false` (one-way audio).
+   */
+  readonly enableTalkback?: boolean;
 }
 
 /** Value returned by {@link useAudioStream}. */
@@ -90,6 +113,28 @@ export interface UseAudioStreamState extends UseSignalingState {
    * SDP after negotiation. `null` until a local description exists.
    */
   readonly mediaEncrypted: MediaEncryptionProfile | null;
+  /**
+   * Two-way talk (DMY-20). Whether the talkback feature is enabled for this
+   * session. When false, `talking` stays false and the talk controls are no-ops.
+   */
+  readonly talkbackEnabled: boolean;
+  /**
+   * Parent-unit: whether the parent is CURRENTLY talking (push-to-talk held —
+   * the outgoing talk track is enabled / transmitting). Driven by the real
+   * track's enabled flag via the controller, never fabricated.
+   */
+  readonly talking: boolean;
+  /**
+   * Parent-unit: begin transmitting the parent's voice to the baby (call on
+   * press-in of the talk button). No-op until the talk capture is ready, on the
+   * baby-unit, or when talkback is disabled.
+   */
+  readonly startTalking: () => void;
+  /**
+   * Parent-unit: stop transmitting (call on press-out of the talk button).
+   * No-op when not talking / talkback disabled.
+   */
+  readonly stopTalking: () => void;
 }
 
 export function useAudioStream(
@@ -99,6 +144,7 @@ export function useAudioStream(
     mediaDevices,
     playback,
     initiallyMuted = false,
+    enableTalkback = false,
     ...signalingOptions
   } = options;
 
@@ -109,6 +155,7 @@ export function useAudioStream(
   const [muted, setMutedState] = useState(initiallyMuted);
   const [mediaEncrypted, setMediaEncrypted] =
     useState<MediaEncryptionProfile | null>(null);
+  const [talking, setTalking] = useState(false);
 
   // The baby-unit's captured local stream and the live peer connection — held in
   // refs so cleanup can stop the mic / read the SDP without re-rendering.
@@ -116,6 +163,10 @@ export function useAudioStream(
     ReturnType<typeof getLocalAudioStream>
   > | null>(null);
   const peerRef = useRef<PeerConnection | null>(null);
+  // The parent's push-to-talk controller (DMY-20) — null until the talk capture
+  // is acquired. Held in a ref so press-in/press-out and cleanup reach the real
+  // track without re-rendering.
+  const talkbackRef = useRef<TalkbackController | null>(null);
 
   // One wrapped playback controller per (lifetime × controller identity).
   const safePlayback = useMemo(
@@ -133,20 +184,44 @@ export function useAudioStream(
   playbackRef.current = safePlayback;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
+  const enableTalkbackRef = useRef(enableTalkback);
+  enableTalkbackRef.current = enableTalkback;
 
   // baby-unit: capture + publish audio onto the freshly-created peer connection,
-  // BEFORE the answer is negotiated. Awaited inside the session.
+  // BEFORE the answer is negotiated. parent-unit: when talkback is on, also
+  // capture its OWN mic (echo-cancelled) and publish a DISABLED push-to-talk
+  // track. Awaited inside the session so capture completes before negotiation.
   const onPeerConnection = useCallback(async (pc: PeerConnection) => {
     peerRef.current = pc;
-    if (roleRef.current !== 'baby') {
-      // The parent-unit publishes nothing; it only receives.
+    if (roleRef.current === 'baby') {
+      const stream = await getLocalAudioStream(mediaDevicesRef.current ?? null);
+      localStreamRef.current = stream;
+      for (const track of stream.getTracks()) {
+        if (track.kind === 'audio') {
+          pc.addAudioTrack(track, stream);
+        }
+      }
       return;
     }
-    const stream = await getLocalAudioStream(mediaDevicesRef.current ?? null);
-    localStreamRef.current = stream;
-    for (const track of stream.getTracks()) {
+    // parent-unit: publishes nothing unless two-way talk is enabled.
+    if (!enableTalkbackRef.current) {
+      return;
+    }
+    // Capture the parent mic with native echo cancellation and publish a
+    // push-to-talk track that is DISABLED by default (half-duplex; nothing is
+    // transmitted until the parent holds the talk button).
+    const talkStream = await getTalkbackAudioStream(
+      mediaDevicesRef.current ?? null,
+    );
+    const controller = createTalkbackController(talkStream, next =>
+      setTalking(next),
+    );
+    talkbackRef.current = controller;
+    for (const track of talkStream.getTracks()) {
       if (track.kind === 'audio') {
-        pc.addAudioTrack(track, stream);
+        // The track is already disabled by the controller; we still add it so
+        // the parent→baby audio m-line is part of the initial negotiation.
+        pc.addAudioTrack(track, talkStream);
       }
     }
   }, []);
@@ -158,9 +233,13 @@ export function useAudioStream(
     setMediaEncrypted(assertEncryptedMediaProfile(description.sdp));
   }, []);
 
-  // parent-unit: attach a real remote audio track to playback.
+  // Attach a real remote audio track to playback. On the parent this is the
+  // baby→parent monitor audio (DMY-18); on the baby — only with two-way talk
+  // enabled — this is the parent's push-to-talk voice (DMY-20). The baby never
+  // mutes the incoming talk (the parent already controls it via push-to-talk).
   const onRemoteTrack = useCallback((event: unknown) => {
-    if (roleRef.current === 'baby') {
+    if (roleRef.current === 'baby' && !enableTalkbackRef.current) {
+      // One-way audio: the baby publishes only and ignores any stray track.
       return;
     }
     const stream = extractRemoteAudioStream(event as never);
@@ -168,7 +247,10 @@ export function useAudioStream(
       // Not an audio track (or no usable stream): do NOT mark playing.
       return;
     }
-    setStreamAudioEnabled(stream, !mutedRef.current);
+    if (roleRef.current !== 'baby') {
+      // Parent honours its playback mute on the monitor audio.
+      setStreamAudioEnabled(stream, !mutedRef.current);
+    }
     playbackRef.current.start(stream);
     setHasRemoteAudio(true);
     setPlaying(true);
@@ -195,6 +277,16 @@ export function useAudioStream(
     playbackRef.current.setMuted(next);
   }, []);
 
+  // Push-to-talk (DMY-20): enable/disable the parent's outgoing talk track. Both
+  // are no-ops until the talk capture is ready (controller acquired) — they
+  // NEVER fabricate a talking state; `talking` is driven by the real track flag.
+  const startTalking = useCallback(() => {
+    talkbackRef.current?.startTalking();
+  }, []);
+  const stopTalking = useCallback(() => {
+    talkbackRef.current?.stopTalking();
+  }, []);
+
   // Clean up media when an ACTIVE session goes inactive (user stop / failure).
   // We only release media on a true active→inactive transition — never on the
   // initial inactive mount (which would null `peerRef` before start() sets it).
@@ -214,6 +306,12 @@ export function useAudioStream(
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
     }
+    if (talkbackRef.current) {
+      // Release the parent talk mic (stops the track) — no capture leak.
+      talkbackRef.current.dispose();
+      talkbackRef.current = null;
+      setTalking(false);
+    }
     if (playing) {
       safePlayback.stop();
       setPlaying(false);
@@ -222,16 +320,20 @@ export function useAudioStream(
     peerRef.current = null;
   }, [isActive, playing, safePlayback]);
 
-  // Hard safety net on unmount: stop the mic and playback even if the active
-  // flag never flipped (e.g. an unmount mid-session).
+  // Hard safety net: stop the mic / talk capture and playback on TRUE unmount
+  // even if the active flag never flipped (e.g. an unmount mid-session). Keyed
+  // on nothing so it runs only on unmount — never when the (possibly inline)
+  // playback prop identity changes, which must NOT tear down a live capture.
   useEffect(() => {
     return () => {
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
-      safePlayback.stop();
+      talkbackRef.current?.dispose();
+      talkbackRef.current = null;
+      playbackRef.current.stop();
       peerRef.current = null;
     };
-  }, [safePlayback]);
+  }, []);
 
   return {
     ...signaling,
@@ -240,5 +342,9 @@ export function useAudioStream(
     muted,
     setMuted,
     mediaEncrypted,
+    talkbackEnabled: enableTalkback,
+    talking,
+    startTalking,
+    stopTalking,
   };
 }

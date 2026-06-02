@@ -64,6 +64,24 @@ export {
 export { noopAudioPlayback, createSafeAudioPlayback } from './audioPlayback';
 export { useAudioStream } from './useAudioStream';
 export type { AudioPlayback } from './audioPlayback';
+
+// --- Two-way talk: parent→baby push-to-talk + echo cancellation (DMY-20) -----
+// The parent captures its own mic with native echo cancellation (TALK_AUDIO_
+// CONSTRAINTS: echoCancellation/noiseSuppression/autoGainControl) and publishes
+// a DISABLED push-to-talk track onto the SAME (DTLS-SRTP) peer connection; the
+// baby plays the parent's incoming voice. Half-duplex push-to-talk (mic open
+// only while the talk button is held) + native AEC minimise feedback. Real
+// cross-device audio is a manual milestone (no devices/network in CI); every
+// seam used to do it (capture, track enable/disable, ontrack playback) is real.
+export {
+  getTalkbackAudioStream,
+  createTalkbackController,
+  requestsEchoCancellation,
+  TALK_AUDIO_CONSTRAINTS,
+} from './talkback';
+export type { TalkbackController } from './talkback';
+export { default as TalkButton } from './TalkButton';
+export type { TalkButtonProps } from './TalkButton';
 export type {
   UseAudioStreamOptions,
   UseAudioStreamState,
