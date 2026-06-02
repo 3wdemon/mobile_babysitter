@@ -118,6 +118,14 @@
     "selectedA11y": "{{label}}, selected",
     "bluetoothUnavailable": "No Bluetooth device connected"
   },
+  "volume": {
+    "label": "Volume",
+    "value": "{{percent}}%",
+    "muted": "Muted",
+    "valueA11y": "Volume {{percent}} percent",
+    "incrementA11y": "Increase volume",
+    "decrementA11y": "Decrease volume"
+  },
   "battery": {
     "unknown": "—",
     "charging": "charging",

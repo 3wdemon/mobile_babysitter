@@ -52,6 +52,19 @@ export const AUDIO_ROUTES: readonly AudioRoute[] = [
 export const DEFAULT_AUDIO_ROUTE: AudioRoute = 'speaker';
 
 /**
+ * Clamp a playback volume onto the inclusive 0..1 range (DMY-56). Non-finite
+ * input (`NaN` / `Infinity`) degrades to `0` so a bad value silences rather
+ * than crashes or blasts. The single source of truth for the [0,1] contract,
+ * shared by the safe wrapper so the controller is always handed a valid scalar.
+ */
+export function clampVolume(volume: number): number {
+  if (!Number.isFinite(volume)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, volume));
+}
+
+/**
  * Device-effect backend for parent-unit audio output. The single integration
  * point for the audio-routing / VoIP-session layer (DMY-9, DMY-48). Every method
  * MUST be safe to call (never throw) and cheap.
@@ -76,6 +89,19 @@ export interface AudioPlayback {
   stop(): void;
   /** Mute or unmute local playback (does NOT stop the stream). */
   setMuted(muted: boolean): void;
+  /**
+   * Set the playback OUTPUT volume on a normalised 0..1 scale (DMY-56), where
+   * `1` is full volume and `0` is fully attenuated. Out-of-range / non-finite
+   * inputs are the CALLER's responsibility to clamp (the store/UI already do),
+   * but a controller MUST still be defensive. MUST never throw.
+   *
+   * IMPORTANT: `setVolume(0)` MUTES the OUTPUT but does NOT tear the session
+   * down — it is NOT {@link stop}. The remote audio track stays attached and
+   * the P2P link stays connected (so detection / alerts keep working and the
+   * user can raise the volume again instantly without re-handshaking). Only
+   * {@link stop} releases the stream. Idempotent for the same value.
+   */
+  setVolume(volume: number): void;
   /**
    * Request that monitor audio be routed to `route` (DMY-55). May be sync or
    * async (the native session switch can be a promise). MUST never throw — a
@@ -123,6 +149,7 @@ export const noopAudioPlayback: AudioPlayback = {
   start: () => {},
   stop: () => {},
   setMuted: () => {},
+  setVolume: () => {},
   setRoute: () => {},
   isBluetoothAvailable: () => false,
   getAvailableRoutes: () => availableRoutesFor(false),
@@ -193,6 +220,15 @@ export function createSafeAudioPlayback(
       // Boolean flag only — no media content.
       logger.info('webrtc/audio: playback muted state', { muted });
     },
+    setVolume: volume => {
+      // Defensive clamp so the controller always gets a valid 0..1 scalar even
+      // if a caller bypasses the store/UI clamps. setVolume(0) mutes output but
+      // never stops the stream (see AudioPlayback.setVolume docs).
+      const clamped = clampVolume(volume);
+      safe('setVolume', () => playback.setVolume(clamped));
+      // Coarse scalar only — no media content.
+      logger.info('webrtc/audio: playback volume set', { volume: clamped });
+    },
     setRoute: route => {
       const result = safeAsync('setRoute', () => playback.setRoute(route));
       // The route name is a coarse, non-PII lifecycle fact (no media content).
@@ -258,6 +294,12 @@ export function createAudioSessionPlayback(
     start: () => {},
     stop: () => {},
     setMuted: () => {},
+    // Volume scaling is an output-session effect (AudioManager STREAM_VOICE_CALL
+    // / AVAudioSession). Until DMY-48 wires the native session it is a no-op here
+    // — react-native-webrtc plays the remote track on the default output and the
+    // 0..1 preference is held in the store; setVolume(0) mutes WITHOUT stopping.
+    // TODO(DMY-48): map onto the native session's output-volume control.
+    setVolume: () => {},
     setRoute: route => session.applyRoute(route),
     isBluetoothAvailable: () => session.hasBluetooth(),
     getAvailableRoutes: () => availableRoutesFor(session.hasBluetooth()),

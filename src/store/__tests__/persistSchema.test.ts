@@ -17,6 +17,7 @@ const VALID_STATE: PersistedState = {
     isPremium: true,
     powerSaverEnabled: false,
     audioOnlyEnabled: false,
+    playbackVolume: 0.5,
   },
   freeTierUsage: { usedMs: 123_000, dateKey: '2026-06-02' },
 };
@@ -162,6 +163,54 @@ describe('parsePersistedState (DMY-43)', () => {
       expect(result.settings.motionSensitivity).toBe(
         DEFAULT_PERSISTED_STATE.settings.motionSensitivity,
       );
+    });
+
+    it('preserves a valid in-range playbackVolume (DMY-56)', () => {
+      const result = parsePersistedState({
+        settings: { ...VALID_STATE.settings, playbackVolume: 0.25 },
+      });
+      expect(result.settings.playbackVolume).toBe(0.25);
+      // 0 (mute) is a valid persisted level, not repaired away.
+      const muted = parsePersistedState({
+        settings: { ...VALID_STATE.settings, playbackVolume: 0 },
+      });
+      expect(muted.settings.playbackVolume).toBe(0);
+    });
+
+    it('repairs an out-of-range / non-finite playbackVolume to the default (DMY-56)', () => {
+      const tooHigh = parsePersistedState({
+        settings: { ...VALID_STATE.settings, playbackVolume: 5 },
+      });
+      expect(tooHigh.settings.playbackVolume).toBe(
+        DEFAULT_PERSISTED_STATE.settings.playbackVolume,
+      );
+      const negative = parsePersistedState({
+        settings: { ...VALID_STATE.settings, playbackVolume: -2 },
+      });
+      expect(negative.settings.playbackVolume).toBe(
+        DEFAULT_PERSISTED_STATE.settings.playbackVolume,
+      );
+      const wrongType = parsePersistedState({
+        settings: { ...VALID_STATE.settings, playbackVolume: 'loud' },
+      });
+      expect(wrongType.settings.playbackVolume).toBe(
+        DEFAULT_PERSISTED_STATE.settings.playbackVolume,
+      );
+    });
+
+    it('backfills a missing playbackVolume to the default (older blob) (DMY-56)', () => {
+      const partialSettings = { ...VALID_STATE.settings };
+      delete (partialSettings as Partial<typeof partialSettings>)
+        .playbackVolume;
+      const result = parsePersistedState({
+        settings: partialSettings,
+      });
+      // Missing field backfilled to the full-volume default...
+      expect(result.settings.playbackVolume).toBe(
+        DEFAULT_PERSISTED_STATE.settings.playbackVolume,
+      );
+      // ...while present siblings survive untouched.
+      expect(result.settings.theme).toBe('dark');
     });
 
     it('repairs a wrong-typed boolean setting in isolation', () => {

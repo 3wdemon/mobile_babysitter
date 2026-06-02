@@ -105,6 +105,18 @@ export const useAppStore = create<AppState>()(
         set(state => ({
           settings: { ...state.settings, audioOnlyEnabled: enabled },
         })),
+      // DMY-56: parent playback volume on a 0..1 scale. 0 mutes output (does NOT
+      // disconnect — that is the controller's setVolume contract).
+      setPlaybackVolume: volume =>
+        set(state => ({
+          settings: {
+            ...state.settings,
+            // Clamp to [0, 1]; ignore NaN/Infinity by falling back to current.
+            playbackVolume: Number.isFinite(volume)
+              ? Math.min(1, Math.max(0, volume))
+              : state.settings.playbackVolume,
+          },
+        })),
       // DMY-11: PLACEHOLDER premium flag. No StoreKit/purchase behind it yet
       // (DMY-27); flips only via this action so the quota wiring is testable.
       setPremium: isPremium =>

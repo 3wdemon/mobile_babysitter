@@ -8,6 +8,7 @@
 import {
   AUDIO_ROUTES,
   availableRoutesFor,
+  clampVolume,
   createAudioSessionPlayback,
   createSafeAudioPlayback,
   noopAudioPlayback,
@@ -23,6 +24,7 @@ function mockPlayback(overrides: Partial<AudioPlayback> = {}): AudioPlayback {
     start: jest.fn(),
     stop: jest.fn(),
     setMuted: jest.fn(),
+    setVolume: jest.fn(),
     setRoute: jest.fn(),
     isBluetoothAvailable: jest.fn(() => false),
     getAvailableRoutes: jest.fn(() => availableRoutesFor(false)),
@@ -56,6 +58,36 @@ describe('noopAudioPlayback', () => {
       'earpiece',
     ]);
   });
+
+  it('setVolume is a safe no-op for any value incl. 0 (mute) and never throws', () => {
+    expect(() => {
+      noopAudioPlayback.setVolume(0);
+      noopAudioPlayback.setVolume(0.5);
+      noopAudioPlayback.setVolume(1);
+      noopAudioPlayback.setVolume(5);
+      noopAudioPlayback.setVolume(NaN);
+    }).not.toThrow();
+    expect(noopAudioPlayback.setVolume(0)).toBeUndefined();
+  });
+});
+
+describe('clampVolume', () => {
+  it('passes in-range values through unchanged', () => {
+    expect(clampVolume(0)).toBe(0);
+    expect(clampVolume(0.42)).toBe(0.42);
+    expect(clampVolume(1)).toBe(1);
+  });
+
+  it('clamps out-of-range values onto [0, 1]', () => {
+    expect(clampVolume(5)).toBe(1);
+    expect(clampVolume(-3)).toBe(0);
+  });
+
+  it('degrades non-finite input to 0 (silence, never a crash/blast)', () => {
+    expect(clampVolume(NaN)).toBe(0);
+    expect(clampVolume(Infinity)).toBe(0);
+    expect(clampVolume(-Infinity)).toBe(0);
+  });
 });
 
 describe('availableRoutesFor', () => {
@@ -77,6 +109,33 @@ describe('createSafeAudioPlayback', () => {
     expect(inner.start).toHaveBeenCalledWith(fakeStream);
     expect(inner.setMuted).toHaveBeenCalledWith(true);
     expect(inner.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards setVolume to the controller, clamping out-of-range input', () => {
+    const inner = mockPlayback();
+    const safe = createSafeAudioPlayback(inner);
+
+    safe.setVolume(0.5);
+    expect(inner.setVolume).toHaveBeenLastCalledWith(0.5);
+
+    // > 1 clamps to 1, < 0 clamps to 0, non-finite degrades to 0.
+    safe.setVolume(5);
+    expect(inner.setVolume).toHaveBeenLastCalledWith(1);
+    safe.setVolume(-3);
+    expect(inner.setVolume).toHaveBeenLastCalledWith(0);
+    safe.setVolume(NaN);
+    expect(inner.setVolume).toHaveBeenLastCalledWith(0);
+  });
+
+  it('setVolume(0) mutes without calling stop (no disconnect)', () => {
+    const inner = mockPlayback();
+    const safe = createSafeAudioPlayback(inner);
+
+    safe.setVolume(0);
+
+    expect(inner.setVolume).toHaveBeenCalledWith(0);
+    // Muting must NOT tear the stream/session down.
+    expect(inner.stop).not.toHaveBeenCalled();
   });
 
   it('forwards setRoute to the wrapped controller with the chosen route', () => {
@@ -110,6 +169,9 @@ describe('createSafeAudioPlayback', () => {
       setMuted: jest.fn(() => {
         throw new Error('mute failed');
       }),
+      setVolume: jest.fn(() => {
+        throw new Error('volume failed');
+      }),
       setRoute: jest.fn(() => {
         throw new Error('route failed');
       }),
@@ -123,6 +185,7 @@ describe('createSafeAudioPlayback', () => {
     const safe = createSafeAudioPlayback(inner);
     expect(() => safe.start(fakeStream)).not.toThrow();
     expect(() => safe.setMuted(true)).not.toThrow();
+    expect(() => safe.setVolume(0.5)).not.toThrow();
     expect(() => safe.stop()).not.toThrow();
     expect(() => safe.setRoute('bluetooth')).not.toThrow();
     // Failing capability probes degrade safely, never throw.
@@ -173,5 +236,17 @@ describe('createAudioSessionPlayback (real-controller scaffold)', () => {
     };
     const playback = createAudioSessionPlayback(session);
     expect(playback.getAvailableRoutes()).toEqual(['speaker', 'earpiece']);
+  });
+
+  it('setVolume is a no-op scaffold until the native session lands (DMY-48)', () => {
+    const session: AudioSession = {
+      applyRoute: jest.fn(),
+      hasBluetooth: jest.fn(() => false),
+    };
+    const playback = createAudioSessionPlayback(session);
+    // No native output-volume control yet; must not throw and must not affect
+    // routing/availability probes.
+    expect(() => playback.setVolume(0.3)).not.toThrow();
+    expect(session.applyRoute).not.toHaveBeenCalled();
   });
 });
