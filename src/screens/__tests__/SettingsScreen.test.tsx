@@ -230,6 +230,54 @@ describe('sensitivity segmented controls', () => {
     const high = await screen.findByTestId('settings-noise-high');
     expect(high.props.accessibilityState).toMatchObject({ selected: true });
   });
+
+  it('maps an arbitrary in-between noise scalar to the single nearest level', async () => {
+    // 0.72 sits between the "medium" (0.6) and "low" (0.8) steps but closer to
+    // low (|0.72-0.8|=0.08 < |0.72-0.6|=0.12), so ONLY "low" is selected.
+    act(() => {
+      useAppStore.getState().setNoiseThreshold(0.72);
+    });
+    renderSettings();
+    const low = await screen.findByTestId('settings-noise-low');
+    expect(low.props.accessibilityState).toMatchObject({ selected: true });
+    expect(
+      screen.getByTestId('settings-noise-medium').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+    expect(
+      screen.getByTestId('settings-noise-high').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+  });
+
+  it('maps an arbitrary in-between motion scalar to the single nearest level', async () => {
+    // 0.12 sits between "high" (0.06) and "medium" (0.15) but is unambiguously
+    // nearest medium (|0.12-0.15|=0.03 < |0.12-0.06|=0.06), so ONLY medium is
+    // selected.
+    act(() => {
+      useAppStore.getState().setMotionSensitivity(0.12);
+    });
+    renderSettings();
+    const medium = await screen.findByTestId('settings-motion-medium');
+    expect(medium.props.accessibilityState).toMatchObject({ selected: true });
+    expect(
+      screen.getByTestId('settings-motion-low').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+    expect(
+      screen.getByTestId('settings-motion-high').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+  });
+
+  it('reflects a newly-set noise level in the segmented selection (round-trip)', async () => {
+    renderSettings();
+    // Start at the default; tap medium and confirm the selection moves there.
+    fireEvent.press(await screen.findByTestId('settings-noise-medium'));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('settings-noise-medium').props.accessibilityState,
+      ).toMatchObject({ selected: true });
+    });
+    expect(useAppStore.getState().settings.noiseThreshold).toBe(0.6);
+    expect(readPersistedSettings().noiseThreshold).toBe(0.6);
+  });
 });
 
 describe('role control', () => {
@@ -242,6 +290,97 @@ describe('role control', () => {
     });
     // Role is persisted at the top level of the persisted blob.
     expect(readPersistedBlob()!.state.role).toBe('parent');
+  });
+
+  it('reflects the selected role in the segmented control', async () => {
+    renderSettings();
+    // Default role is null -> neither option selected initially.
+    expect(
+      screen.getByTestId('settings-role-baby').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+
+    fireEvent.press(await screen.findByTestId('settings-role-parent'));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('settings-role-parent').props.accessibilityState,
+      ).toMatchObject({ selected: true });
+    });
+    expect(
+      screen.getByTestId('settings-role-baby').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+
+    // Switch back to baby and confirm the selection follows the store.
+    fireEvent.press(screen.getByTestId('settings-role-baby'));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('settings-role-baby').props.accessibilityState,
+      ).toMatchObject({ selected: true });
+    });
+    expect(
+      screen.getByTestId('settings-role-parent').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+    expect(useAppStore.getState().role).toBe('baby');
+    expect(readPersistedBlob()!.state.role).toBe('baby');
+  });
+});
+
+describe('state consistency under rapid interaction', () => {
+  it('keeps store + persisted blob consistent through rapid alert-sounds toggling', async () => {
+    renderSettings();
+    const sw = await screen.findByTestId('settings-alert-sounds');
+    // Default is true. Drive an even number of flips; the net state must return
+    // to the start and the persisted blob must agree with live state.
+    act(() => {
+      for (let i = 0; i < 10; i++) {
+        useAppStore.getState().toggleAlertSounds();
+      }
+    });
+    await waitFor(() => {
+      expect(useAppStore.getState().settings.alertSoundsEnabled).toBe(true);
+    });
+    expect(readPersistedSettings().alertSoundsEnabled).toBe(
+      useAppStore.getState().settings.alertSoundsEnabled,
+    );
+    // The switch element reflects the final state, not an intermediate one.
+    expect(sw.props.value).toBe(true);
+  });
+
+  it('lands on the last theme pick after rapid switching and persists it', async () => {
+    renderSettings();
+    fireEvent.press(await screen.findByTestId('settings-theme-dark'));
+    fireEvent.press(screen.getByTestId('settings-theme-light'));
+    fireEvent.press(screen.getByTestId('settings-theme-system'));
+    fireEvent.press(screen.getByTestId('settings-theme-dark'));
+
+    await waitFor(() => {
+      expect(useAppStore.getState().settings.theme).toBe('dark');
+    });
+    expect(readPersistedSettings().theme).toBe('dark');
+    expect(
+      screen.getByTestId('settings-theme-dark').props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    // Exactly one selected.
+    expect(
+      screen.getByTestId('settings-theme-light').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+    expect(
+      screen.getByTestId('settings-theme-system').props.accessibilityState,
+    ).toMatchObject({ selected: false });
+  });
+
+  it('lands on the last noise level after rapid segment switching and persists it', async () => {
+    renderSettings();
+    fireEvent.press(await screen.findByTestId('settings-noise-low'));
+    fireEvent.press(screen.getByTestId('settings-noise-high'));
+    fireEvent.press(screen.getByTestId('settings-noise-medium'));
+
+    await waitFor(() => {
+      expect(useAppStore.getState().settings.noiseThreshold).toBe(0.6);
+    });
+    expect(readPersistedSettings().noiseThreshold).toBe(0.6);
+    expect(
+      screen.getByTestId('settings-noise-medium').props.accessibilityState,
+    ).toMatchObject({ selected: true });
   });
 });
 
