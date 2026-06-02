@@ -15,6 +15,21 @@ import { useEffect, useRef } from 'react';
 import BootSplash from 'react-native-bootsplash';
 
 /**
+ * Hide the native bootsplash with a fade. Single source of truth for the hide
+ * options so every entry point (the normal `onReady` path and the crash path in
+ * ErrorBoundary) dissolves the placeholder identically.
+ *
+ * Safe to call more than once: `BootSplash.hide` is idempotent natively (a
+ * second call after the splash is gone is a no-op) and any error is swallowed —
+ * a missing / already-hidden splash must never crash the app.
+ */
+export function hideBootSplash(): void {
+  // fade so the placeholder logo dissolves into the first screen rather than
+  // popping; errors are swallowed (a missing splash must never crash the app).
+  BootSplash.hide({ fade: true }).catch(() => {});
+}
+
+/**
  * Hide the native bootsplash exactly once, after the caller signals the root
  * navigator is ready. `ready` defaults to true so the simplest usage
  * (`useHideBootSplash()` at the app root) hides on first mount.
@@ -30,9 +45,7 @@ export function useHideBootSplash(ready: boolean = true): void {
       return;
     }
     hidden.current = true;
-    // fade so the placeholder logo dissolves into the first screen rather than
-    // popping; errors are swallowed (a missing splash must never crash the app).
-    BootSplash.hide({ fade: true }).catch(() => {});
+    hideBootSplash();
   }, [ready]);
 }
 
