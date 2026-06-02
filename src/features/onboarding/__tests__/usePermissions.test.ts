@@ -6,6 +6,7 @@
  * results to our domain statuses, requests notifications via the dedicated API,
  * and never throws on a native failure (so the onboarding flow can continue).
  */
+import { Linking } from 'react-native';
 import { act, renderHook } from '@testing-library/react-native';
 import {
   RESULTS,
@@ -115,5 +116,42 @@ describe('usePermissions', () => {
       notifications: 'denied',
     });
     expect(result.current.requesting).toBe(false);
+  });
+
+  describe('openSettings (DMY-57)', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('opens the OS settings screen and resolves true', async () => {
+      const spy = jest
+        .spyOn(Linking, 'openSettings')
+        .mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePermissions());
+
+      let opened: boolean | undefined;
+      await act(async () => {
+        opened = await result.current.openSettings();
+      });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(opened).toBe(true);
+    });
+
+    it('never throws and resolves false when openSettings rejects', async () => {
+      jest
+        .spyOn(Linking, 'openSettings')
+        .mockRejectedValue(new Error('no settings activity'));
+
+      const { result } = renderHook(() => usePermissions());
+
+      let opened: boolean | undefined;
+      await act(async () => {
+        opened = await result.current.openSettings();
+      });
+
+      expect(opened).toBe(false);
+    });
   });
 });

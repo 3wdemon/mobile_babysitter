@@ -46,7 +46,19 @@
       "requesting": "Requesting…",
       "allowAccess": "Allow access",
       "continue": "Continue",
-      "skip": "Skip for now"
+      "skip": "Skip for now",
+      "reRequest": {
+        "title": "Permissions needed",
+        "subtitle": "The monitor needs the permissions below to work. Granting takes a moment and nothing leaves your devices.",
+        "deniedGuidance": "Not granted yet.",
+        "blockedGuidance": "This was turned off and can only be re-enabled in your device Settings.",
+        "grant": "Grant",
+        "grantA11y": "Grant {{title}} permission",
+        "openSettings": "Open settings",
+        "openSettingsA11y": "Open settings to enable {{title}}",
+        "allGranted": "All permissions granted.",
+        "continue": "Continue"
+      }
     },
     "roleSelect": {
       "title": "What is this phone for?",
