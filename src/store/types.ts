@@ -73,6 +73,14 @@ export interface Settings {
    */
   noiseThreshold: number;
   /**
+   * Motion-detection sensitivity as the motion enter-threshold on a normalised
+   * 0..1 scale (DMY-25). LOWER = more sensitive (less inter-frame change is
+   * required to count as motion / to break stillness). Only this scalar is
+   * persisted; no frame/video is ever stored. Maps onto the motion detector's
+   * `enterThreshold`; the >30s no-motion timer is fixed in the detector config.
+   */
+  motionSensitivity: number;
+  /**
    * Whether entering parent monitoring mode requires biometric / PIN unlock
    * (DMY-10). Opt-in: defaults to `false`, so the lock gate is bypassed and the
    * parent screen behaves exactly as before until the user enables it.
@@ -183,6 +191,11 @@ export interface AppActions {
    * Out-of-range or non-finite values are clamped to [0, 1].
    */
   setNoiseThreshold: (threshold: number) => void;
+  /**
+   * Set the motion-detection sensitivity (enter-threshold, 0..1) (DMY-25).
+   * Out-of-range or non-finite values are clamped to [0, 1].
+   */
+  setMotionSensitivity: (sensitivity: number) => void;
   /** Enable or disable the biometric/PIN lock on parent mode (DMY-10). */
   setBiometricLockEnabled: (enabled: boolean) => void;
   /** Enable or disable baby-unit power-saver mode (DMY-12). */

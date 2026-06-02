@@ -67,6 +67,7 @@ describe('useAppStore', () => {
       theme: 'system',
       alertSoundsEnabled: true,
       noiseThreshold: 0.6,
+      motionSensitivity: 0.15,
       biometricLockEnabled: false,
       isPremium: false,
       powerSaverEnabled: true,
@@ -227,6 +228,7 @@ describe('useAppStore', () => {
         theme: 'system',
         alertSoundsEnabled: true,
         noiseThreshold: 0.6,
+        motionSensitivity: 0.15,
         biometricLockEnabled: false,
         isPremium: false,
         powerSaverEnabled: true,
@@ -251,6 +253,7 @@ describe('useAppStore', () => {
         theme: 'system',
         alertSoundsEnabled: true,
         noiseThreshold: 0.6,
+        motionSensitivity: 0.15,
         biometricLockEnabled: false,
         isPremium: false,
         powerSaverEnabled: true,
@@ -289,6 +292,7 @@ describe('useAppStore', () => {
           theme: 'system',
           alertSoundsEnabled: true,
           noiseThreshold: 0.6,
+          motionSensitivity: 0.15,
           biometricLockEnabled: false,
           isPremium: false,
           powerSaverEnabled: true,
@@ -352,6 +356,72 @@ describe('useAppStore', () => {
       });
       const restored = restartAndGetState();
       expect(restored.settings.noiseThreshold).toBe(0.42);
+    });
+  });
+
+  describe('motion sensitivity (DMY-25)', () => {
+    it('defaults to 0.15', () => {
+      expect(useAppStore.getState().settings.motionSensitivity).toBe(0.15);
+    });
+
+    it('updates the motion sensitivity within range', () => {
+      act(() => {
+        useAppStore.getState().setMotionSensitivity(0.3);
+      });
+      expect(useAppStore.getState().settings.motionSensitivity).toBe(0.3);
+    });
+
+    it('clamps out-of-range values to [0, 1]', () => {
+      act(() => {
+        useAppStore.getState().setMotionSensitivity(5);
+      });
+      expect(useAppStore.getState().settings.motionSensitivity).toBe(1);
+      act(() => {
+        useAppStore.getState().setMotionSensitivity(-3);
+      });
+      expect(useAppStore.getState().settings.motionSensitivity).toBe(0);
+    });
+
+    it('ignores non-finite values, keeping the previous sensitivity', () => {
+      act(() => {
+        useAppStore.getState().setMotionSensitivity(0.25);
+        useAppStore.getState().setMotionSensitivity(NaN);
+      });
+      expect(useAppStore.getState().settings.motionSensitivity).toBe(0.25);
+    });
+
+    it('persists the motion sensitivity across a simulated restart', () => {
+      act(() => {
+        useAppStore.getState().setMotionSensitivity(0.22);
+      });
+      const restored = restartAndGetState();
+      expect(restored.settings.motionSensitivity).toBe(0.22);
+    });
+
+    it('backfills the default for an older blob without motionSensitivity', () => {
+      seedPersistedRaw(
+        JSON.stringify({
+          state: {
+            role: 'baby',
+            onboardingCompleted: true,
+            settings: {
+              theme: 'dark',
+              alertSoundsEnabled: true,
+              noiseThreshold: 0.6,
+              biometricLockEnabled: false,
+              isPremium: false,
+              powerSaverEnabled: true,
+              audioOnlyEnabled: true,
+            },
+            freeTierUsage: { usedMs: 0, dateKey: null },
+          },
+          version: 0,
+        }),
+      );
+      const restored = restartAndGetState();
+      // Missing field backfilled to the default; saved fields preserved.
+      expect(restored.settings.motionSensitivity).toBe(0.15);
+      expect(restored.settings.theme).toBe('dark');
     });
   });
 

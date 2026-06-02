@@ -39,6 +39,10 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
     // Mirrors DEFAULT_NOISE_CONFIG.enterThreshold in features/detection; kept as
     // a literal so the store does not depend on the feature module. (DMY-8)
     noiseThreshold: 0.6,
+    // Default motion sensitivity (enter-threshold on the 0..1 motion scale).
+    // Mirrors DEFAULT_MOTION_CONFIG.enterThreshold in features/detection; kept
+    // as a literal so the store does not depend on the feature module. (DMY-25)
+    motionSensitivity: 0.15,
     // Opt-in: parent mode is unlocked by default until the user turns this on.
     biometricLockEnabled: false,
     // Free by default. PLACEHOLDER — no real purchase grants this yet (DMY-27).
@@ -94,6 +98,16 @@ export const useAppStore = create<AppState>()(
             noiseThreshold: Number.isFinite(threshold)
               ? Math.min(1, Math.max(0, threshold))
               : state.settings.noiseThreshold,
+          },
+        })),
+      setMotionSensitivity: sensitivity =>
+        set(state => ({
+          settings: {
+            ...state.settings,
+            // Clamp to [0, 1]; ignore NaN/Infinity by falling back to current.
+            motionSensitivity: Number.isFinite(sensitivity)
+              ? Math.min(1, Math.max(0, sensitivity))
+              : state.settings.motionSensitivity,
           },
         })),
       setBiometricLockEnabled: enabled =>
