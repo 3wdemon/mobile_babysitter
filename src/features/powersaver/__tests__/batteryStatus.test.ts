@@ -238,6 +238,29 @@ describe('createSourceFromDeviceInfo', () => {
     });
   });
 
+  it('reflects a rapid burst of charge/discharge transitions correctly (final state wins)', async () => {
+    const fake = createFakeDeviceInfo({ level: 0.5, charging: false });
+    const source = createSourceFromDeviceInfo(fake.deviceInfo);
+    await flush();
+
+    const seen: BatteryState[] = [];
+    source.subscribe(s => seen.push(s));
+
+    // Rapid sequence crossing the boundary and toggling the charger.
+    fake.emit({ batteryLevel: 0.22, batteryState: 'unplugged' }); // not low
+    fake.emit({ batteryLevel: 0.19, batteryState: 'unplugged' }); // low
+    fake.emit({ batteryLevel: 0.19, batteryState: 'charging' }); // suppressed
+    fake.emit({ batteryLevel: 0.18, batteryState: 'unplugged' }); // low again
+
+    // Every emission produced a snapshot and the final one wins.
+    expect(seen.map(s => s.isLow)).toEqual([false, false, true, false, true]);
+    expect(source.getCurrent()).toEqual<BatteryState>({
+      level: 0.18,
+      isCharging: false,
+      isLow: true,
+    });
+  });
+
   it('a power-state event that omits a field does not clobber the known value', async () => {
     const fake = createFakeDeviceInfo({ level: 0.5, charging: true });
     const source = createSourceFromDeviceInfo(fake.deviceInfo);

@@ -101,6 +101,28 @@ describe('BabyScreen + BatteryIndicator (DMY-54)', () => {
     expect(screen.queryByTestId('battery-warning')).toBeNull();
   });
 
+  it('toggles the warning as the level crosses the 20% boundary in both directions (off-charger)', async () => {
+    const fake = createFakeSource(makeBatteryState(0.25, false));
+    __setBatterySource(fake.source);
+
+    render(<BabyScreen {...navProps} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('battery-indicator')).toBeTruthy();
+    });
+    // 25% -> no warning.
+    expect(screen.queryByTestId('battery-warning')).toBeNull();
+
+    // Discharge across the boundary: 0.20 (NOT low) -> 0.19 (low).
+    act(() => fake.emit(makeBatteryState(0.2, false)));
+    expect(screen.queryByTestId('battery-warning')).toBeNull();
+    act(() => fake.emit(makeBatteryState(0.19, false)));
+    expect(screen.getByTestId('battery-warning')).toBeTruthy();
+
+    // Recover back across the boundary: 0.19 (low) -> 0.20 (NOT low).
+    act(() => fake.emit(makeBatteryState(0.2, false)));
+    expect(screen.queryByTestId('battery-warning')).toBeNull();
+  });
+
   it('renders a neutral chip (no warning) for the UNKNOWN noop state', async () => {
     const fake = createFakeSource(UNKNOWN_BATTERY_STATE);
     __setBatterySource(fake.source);

@@ -109,6 +109,46 @@ describe('useBatteryStatus', () => {
     }
   });
 
+  it('does not warn or update after unmount when the source emits late (no leak)', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const fake = createFakeSource(makeBatteryState(0.5, false));
+      const { result, unmount } = renderHook(() =>
+        useBatteryStatus(fake.source),
+      );
+      const last = result.current;
+
+      unmount();
+      // A late emission after unmount must not trigger a setState-after-unmount
+      // React warning and must not mutate the captured value.
+      act(() => fake.emit(makeBatteryState(0.1, false)));
+
+      expect(result.current).toBe(last);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('reflects the final state after a rapid burst of level + charging changes', () => {
+    const fake = createFakeSource();
+    const { result } = renderHook(() => useBatteryStatus(fake.source));
+
+    act(() => {
+      fake.emit(makeBatteryState(0.8, false));
+      fake.emit(makeBatteryState(0.5, false));
+      fake.emit(makeBatteryState(0.19, false)); // crosses into low
+      fake.emit(makeBatteryState(0.18, true)); // plugged in -> suppressed
+      fake.emit(makeBatteryState(0.17, false)); // unplugged again -> low
+    });
+
+    expect(result.current).toEqual<BatteryState>({
+      level: 0.17,
+      isCharging: false,
+      isLow: true,
+    });
+  });
+
   it('does not re-subscribe on re-render when the source identity is stable', () => {
     const fake = createFakeSource();
     const { rerender } = renderHook(() => useBatteryStatus(fake.source));
