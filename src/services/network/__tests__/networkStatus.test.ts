@@ -8,6 +8,7 @@
  */
 import {
   ONLINE_STATE,
+  createNetworkSource,
   createSourceFromNetInfo,
   getNetworkSource,
   mapNetInfoState,
@@ -185,6 +186,19 @@ describe('createSourceFromNetInfo', () => {
     const seen: NetworkState[] = [];
     expect(() => source.subscribe(s => seen.push(s))).not.toThrow();
     expect(seen[0]).toEqual(ONLINE_STATE);
+  });
+});
+
+describe('createNetworkSource (native module present)', () => {
+  it('builds a working NetInfo-backed source via the manual mock (connected wifi)', () => {
+    // With the Jest manual mock the real require()/adapter path is taken and
+    // reports online without touching native code. The require-FAILURE and
+    // malformed-module fallbacks (AC #3) live in
+    // createNetworkSource.fallback.test.ts, isolated so their per-test module
+    // mocking can't leak into this file's shared-source assertions.
+    const source = createNetworkSource();
+    expect(source.getCurrent().isOnline).toBe(true);
+    expect(() => source.subscribe(() => {})()).not.toThrow();
   });
 });
 

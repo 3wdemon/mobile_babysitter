@@ -75,4 +75,40 @@ describe('useNetworkStatus', () => {
     const { result } = renderHook(() => useNetworkStatus(fake.source));
     expect(result.current.type).toBe('cellular');
   });
+
+  it('returns a stable snapshot across re-renders with no React warning', () => {
+    // useSyncExternalStore logs an error and can wedge into an infinite render
+    // loop if getSnapshot returns a fresh value when nothing changed. Force
+    // repeated re-renders without emitting and assert: same reference, quiet
+    // console.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const fake = createFakeSource({ isOnline: false, type: 'none' });
+      const { result, rerender } = renderHook(() => useNetworkStatus(fake.source));
+
+      const first = result.current;
+      rerender({});
+      rerender({});
+      rerender({});
+
+      // Same value, and crucially the SAME reference (cached snapshot).
+      expect(result.current).toEqual<NetworkState>({ isOnline: false, type: 'none' });
+      expect(result.current).toBe(first);
+      // No "getSnapshot should be cached" / update-depth warnings.
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('does not re-subscribe on re-render when the source identity is stable', () => {
+    const fake = createFakeSource();
+    const { rerender } = renderHook(() => useNetworkStatus(fake.source));
+    expect(fake.calls.subscribe).toBe(1);
+    rerender({});
+    rerender({});
+    // Still a single subscription — no churn / leak from render-time work.
+    expect(fake.calls.subscribe).toBe(1);
+    expect(fake.calls.unsubscribe).toBe(0);
+  });
 });

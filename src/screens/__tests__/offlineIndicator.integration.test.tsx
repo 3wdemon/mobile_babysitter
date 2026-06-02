@@ -10,6 +10,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react-native';
 
 import BabyScreen from '../BabyScreen';
+import ParentScreen from '../ParentScreen';
 import { t } from '../../services/i18n';
 import {
   ONLINE_STATE,
@@ -47,8 +48,9 @@ function createFakeSource() {
   };
 }
 
-// BabyScreen takes navigation props it doesn't use in this path.
+// The screens take navigation props they don't use in this path.
 const navProps = {} as unknown as RootStackScreenProps<'Baby'>;
+const parentNavProps = {} as unknown as RootStackScreenProps<'Parent'>;
 
 beforeEach(() => {
   __resetAllMmkv();
@@ -75,6 +77,54 @@ describe('BabyScreen + OfflineIndicator (DMY-60)', () => {
     expect(screen.queryByTestId('offline-indicator')).toBeNull();
 
     // Source goes offline -> banner appears with the catalog copy.
+    act(() => fake.emit({ isOnline: false, type: 'none' }));
+    const banner = screen.getByTestId('offline-indicator');
+    expect(banner.props.accessibilityRole).toBe('alert');
+    expect(screen.getByText(t('network.offline'))).toBeTruthy();
+
+    // Recovery -> banner disappears.
+    act(() => fake.emit({ isOnline: true, type: 'wifi' }));
+    expect(screen.queryByTestId('offline-indicator')).toBeNull();
+  });
+
+  it('survives a rapid online->offline->online->offline burst without sticking', () => {
+    const fake = createFakeSource();
+    __setNetworkSource(fake.source);
+
+    render(<BabyScreen {...navProps} />);
+    expect(screen.queryByTestId('offline-indicator')).toBeNull();
+
+    // Hammer transitions; the banner must track the LAST state, never wedge.
+    act(() => fake.emit({ isOnline: false, type: 'none' }));
+    act(() => fake.emit({ isOnline: true, type: 'wifi' }));
+    act(() => fake.emit({ isOnline: false, type: 'none' }));
+    act(() => fake.emit({ isOnline: true, type: 'cellular' }));
+    act(() => fake.emit({ isOnline: false, type: 'none' }));
+
+    // Final state is offline -> banner shown.
+    expect(screen.getByTestId('offline-indicator')).toBeTruthy();
+
+    // One more flip back to online -> banner gone (no stuck offline state).
+    act(() => fake.emit({ isOnline: true, type: 'wifi' }));
+    expect(screen.queryByTestId('offline-indicator')).toBeNull();
+  });
+});
+
+describe('ParentScreen + OfflineIndicator (DMY-60)', () => {
+  it('shows the banner when the shared source reports offline, hides it on recovery', async () => {
+    const fake = createFakeSource();
+    __setNetworkSource(fake.source);
+
+    render(<ParentScreen {...parentNavProps} />);
+
+    // Biometric lock is off by default -> the gate is a pass-through and the
+    // pairing UI (with the indicator above it) renders. Online -> no banner.
+    await waitFor(() => {
+      expect(screen.getByTestId('parent-pairing')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('offline-indicator')).toBeNull();
+
+    // Offline -> banner appears with the catalog copy and alert role.
     act(() => fake.emit({ isOnline: false, type: 'none' }));
     const banner = screen.getByTestId('offline-indicator');
     expect(banner.props.accessibilityRole).toBe('alert');
