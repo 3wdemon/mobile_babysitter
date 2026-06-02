@@ -87,6 +87,42 @@ describe('useConnectionQuality', () => {
     clearSpy.mockRestore();
   });
 
+  it('does not poll or setState after unmount (no leak, no state-update warning)', () => {
+    // Behavioural guarantee behind the cleanup, not just the clearInterval call:
+    // once unmounted, advancing time past several poll cadences must neither
+    // re-invoke the provider nor trigger a "state update on an unmounted
+    // component" warning (React logs that via console.error).
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    const getStats = jest.fn(
+      (): ConnectionStats => ({ rttMs: 100, packetLossPct: 0 }),
+    );
+    const { unmount } = renderHook(() => useConnectionQuality(getStats));
+
+    const callsBeforeUnmount = getStats.mock.calls.length;
+    unmount();
+    act(() => jest.advanceTimersByTime(DEFAULT_QUALITY_POLL_MS * 3));
+
+    // Provider is not polled again after unmount.
+    expect(getStats.mock.calls.length).toBe(callsBeforeUnmount);
+    // No React "can't perform a state update on an unmounted component" warning.
+    const stateWarnings = errSpy.mock.calls.filter(c =>
+      String(c[0]).includes("perform a React state update"),
+    );
+    expect(stateWarnings).toHaveLength(0);
+    errSpy.mockRestore();
+  });
+
+  it('falls back to the status level when the provider returns null (no sample)', () => {
+    // The pure layer covers this; assert the hook honours it too so a
+    // momentarily-empty provider on a live link reads the coarse status floor
+    // rather than crashing or reading stale numbers.
+    act(() => useAppStore.setState({ connectionStatus: 'connected' }));
+    const getStats = (): ConnectionStats | null => null;
+    const { result } = renderHook(() => useConnectionQuality(getStats));
+    expect(result.current).toBe('good');
+  });
+
   it('does not start a timer when there is no provider', () => {
     const setSpy = jest.spyOn(globalThis, 'setInterval');
     act(() => useAppStore.setState({ connectionStatus: 'connected' }));
