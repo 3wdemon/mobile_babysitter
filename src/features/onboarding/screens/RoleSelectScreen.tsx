@@ -13,31 +13,21 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { useAppStore } from '../../../store/useAppStore';
 import { logger } from '../../../services/logger';
 import type { Role } from '../../../store/types';
 import type { OnboardingScreenProps } from '../types';
 
-/** The two selectable roles plus their explanatory copy. */
-const ROLE_OPTIONS: ReadonlyArray<{
-  role: Exclude<Role, null>;
-  title: string;
-  body: string;
-}> = [
-  {
-    role: 'baby',
-    title: 'Baby unit',
-    body: 'Leave this phone with your baby. It streams audio and video to the parent phone.',
-  },
-  {
-    role: 'parent',
-    title: 'Parent unit',
-    body: 'Keep this phone with you. It watches and listens, and alerts you about crying or movement.',
-  },
-];
+/**
+ * The two selectable roles. Each role doubles as its catalog key under
+ * `onboarding.roleSelect.options.*` (DMY-63); the copy lives in the catalogs.
+ */
+const ROLE_OPTIONS: ReadonlyArray<Exclude<Role, null>> = ['baby', 'parent'];
 
 function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
   const theme = useTheme();
+  const { t } = useTranslation();
   const setRole = useAppStore(s => s.setRole);
   const completeOnboarding = useAppStore(s => s.completeOnboarding);
 
@@ -66,7 +56,7 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
               marginBottom: theme.spacing.sm,
             },
           ]}>
-          What is this phone for?
+          {t('onboarding.roleSelect.title')}
         </Text>
 
         <Text
@@ -79,12 +69,12 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
               marginBottom: theme.spacing.xl,
             },
           ]}>
-          You can change this any time before pairing.
+          {t('onboarding.roleSelect.subtitle')}
         </Text>
 
-        {ROLE_OPTIONS.map(option => (
+        {ROLE_OPTIONS.map(role => (
           <TouchableOpacity
-            key={option.role}
+            key={role}
             accessibilityRole="button"
             style={[
               styles.card,
@@ -96,7 +86,7 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
                 marginBottom: theme.spacing.md,
               },
             ]}
-            onPress={() => onSelect(option.role)}>
+            onPress={() => onSelect(role)}>
             <Text
               style={[
                 styles.cardTitle,
@@ -108,7 +98,7 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
                   marginBottom: theme.spacing.xs,
                 },
               ]}>
-              {option.title}
+              {t(`onboarding.roleSelect.options.${role}.title`)}
             </Text>
             <Text
               style={[
@@ -119,7 +109,7 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
                   lineHeight: theme.typography.lineHeights.sm,
                 },
               ]}>
-              {option.body}
+              {t(`onboarding.roleSelect.options.${role}.body`)}
             </Text>
           </TouchableOpacity>
         ))}

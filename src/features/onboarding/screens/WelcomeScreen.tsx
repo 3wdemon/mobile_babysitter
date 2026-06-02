@@ -10,26 +10,19 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { useTranslation } from '../../../hooks/useTranslation';
 import type { OnboardingScreenProps } from '../types';
 
-/** Privacy-first selling points shown on the welcome step. */
-const HIGHLIGHTS: ReadonlyArray<{ title: string; body: string }> = [
-  {
-    title: 'Local peer-to-peer',
-    body: 'Your two phones talk directly over your home WiFi — works even without internet.',
-  },
-  {
-    title: 'No cloud, no accounts',
-    body: 'Audio and video never touch a server. There is nothing to hack and nothing to leak.',
-  },
-  {
-    title: 'End-to-end encrypted',
-    body: 'Every stream is encrypted between your devices, so only you can ever see or hear it.',
-  },
-];
+/**
+ * Privacy-first selling points shown on the welcome step. Each entry is a
+ * stable catalog key under `onboarding.welcome.highlights.*` (DMY-63); the copy
+ * itself lives in the locale catalogs.
+ */
+const HIGHLIGHT_KEYS = ['p2p', 'noCloud', 'e2e'] as const;
 
 function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <View
@@ -55,7 +48,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
               marginBottom: theme.spacing.sm,
             },
           ]}>
-          Mobile Babysitter
+          {t('onboarding.welcome.title')}
         </Text>
 
         <Text
@@ -68,13 +61,12 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
               marginBottom: theme.spacing.xl,
             },
           ]}>
-          A premium baby monitor that runs entirely on your phones — private by
-          design.
+          {t('onboarding.welcome.subtitle')}
         </Text>
 
-        {HIGHLIGHTS.map(item => (
+        {HIGHLIGHT_KEYS.map(key => (
           <View
-            key={item.title}
+            key={key}
             style={[
               styles.card,
               {
@@ -96,7 +88,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
                   marginBottom: theme.spacing.xs,
                 },
               ]}>
-              {item.title}
+              {t(`onboarding.welcome.highlights.${key}.title`)}
             </Text>
             <Text
               style={[
@@ -107,7 +99,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
                   lineHeight: theme.typography.lineHeights.sm,
                 },
               ]}>
-              {item.body}
+              {t(`onboarding.welcome.highlights.${key}.body`)}
             </Text>
           </View>
         ))}
@@ -141,7 +133,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
                 fontWeight: theme.typography.fontWeights.semibold,
               },
             ]}>
-            Continue
+            {t('onboarding.welcome.continue')}
           </Text>
         </TouchableOpacity>
       </View>
