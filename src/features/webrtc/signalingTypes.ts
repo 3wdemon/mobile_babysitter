@@ -22,7 +22,11 @@
  * `candidate` keys, so every signalling message logged through it has those
  * fields blanked. We NEVER log a raw SDP/candidate string outside that path.
  */
-import type { MediaStreamLike, MediaStreamTrackLike } from './mediaTypes';
+import type {
+  MediaStreamLike,
+  MediaStreamTrackLike,
+  RtpSenderLike,
+} from './mediaTypes';
 
 /**
  * Which side of the signalling handshake this device plays. Derived from the
@@ -199,6 +203,21 @@ export interface PeerConnection {
    * underlying connection does not support `addTrack`.
    */
   addAudioTrack(track: MediaStreamTrackLike, stream: MediaStreamLike): void;
+  /**
+   * Publish a local VIDEO track (baby-unit, DMY-17). Adds the track — with its
+   * stream — to the connection so it is transmitted to the peer over the
+   * encrypted SRTP session, and RETURNS the `RTCRtpSender` for it (or `null` if
+   * the underlying connection does not support `addTrack`). The returned sender
+   * is the handle the video layer uses to pause/resume (`replaceTrack`) and to
+   * shape the encoding (`setParameters`, adaptive bitrate) WITHOUT
+   * renegotiating. Must be called BEFORE the local description (offer/answer) is
+   * created so the video m-line is part of the initial negotiation. On the
+   * baby-unit (the responder, DMY-17) that means before the answer.
+   */
+  addVideoTrack(
+    track: MediaStreamTrackLike,
+    stream: MediaStreamLike,
+  ): RtpSenderLike | null;
   /** Subscribe to a wrapper event. Returns an unsubscribe function. */
   on<K extends keyof PeerConnectionEvents>(
     event: K,

@@ -11,7 +11,9 @@
 export {
   noopVideoTrackController,
   createSafeVideoTrackController,
+  createSenderVideoTrackController,
 } from './videoTrackController';
+export type { SenderVideoTrackControllerOptions } from './videoTrackController';
 export { useAudioOnlyMode } from './useAudioOnlyMode';
 export { default as ParentMediaView } from './ParentMediaView';
 export type {
@@ -71,9 +73,50 @@ export type {
   MediaStreamTrackLike,
   MediaDevicesLike,
   MediaStreamConstraints,
+  AudioConstraints,
+  VideoConstraints,
   TrackEventLike,
   MediaEncryptionProfile,
+  RtpSenderLike,
+  RtpSendParametersLike,
+  RtpEncodingLike,
+  RtpTransceiverLike,
 } from './mediaTypes';
+
+// --- Video stream: baby→parent over WebRTC, 1080p + adaptive bitrate (DMY-17) -
+// One-way video capture/publish (baby, 1080p with device-step-down) + remote
+// video render (parent, RTCView). Adaptive bitrate reshapes the LIVE sender via
+// setParameters (no renegotiation / reconnect); the bandwidth signal source is
+// abstracted (connection-state proxy by default; getStats-backed in prod). The
+// real sender-backed VideoTrackController replaces the DMY-24 no-op so audio-only
+// genuinely pauses the outgoing video. Video media is SRTP (assertEncrypted-
+// MediaProfile covers the video m-line). Real cross-device frames are a manual
+// milestone (no devices/network in CI); every seam used to do it is real.
+export {
+  getLocalVideoStream,
+  videoTracksOf,
+  extractRemoteVideoStream,
+  streamUrlOf,
+  setVideoBitrate,
+  nextQualityIndex,
+  bandwidthSignalForState,
+  VIDEO_1080P_CONSTRAINTS,
+  VIDEO_CONSTRAINT_LADDER,
+  VIDEO_QUALITY_LADDER,
+  TOP_QUALITY_INDEX,
+  BOTTOM_QUALITY_INDEX,
+} from './videoStream';
+export { useVideoStream } from './useVideoStream';
+export type {
+  LocalVideoCapture,
+  VideoQualityProfile,
+  BandwidthSignal,
+  BandwidthSignalSource,
+} from './videoStream';
+export type {
+  UseVideoStreamOptions,
+  UseVideoStreamState,
+} from './useVideoStream';
 export type {
   SignalingRole,
   SignalingMessage,

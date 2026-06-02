@@ -1,15 +1,19 @@
 /**
- * ParentMediaView — parent-unit media surface + audio-only toggle (DMY-24).
+ * ParentMediaView — parent-unit media surface + audio-only toggle (DMY-24,
+ * DMY-17).
  *
  * Renders the parent's view of the monitored room:
  *  - In AUDIO-ONLY mode: a dark placeholder ("Audio-only · tap to see video")
  *    instead of a video view. The remote video track is NOT requested
- *    (useAudioOnlyMode keeps it disabled), saving bandwidth + battery. Tapping
- *    the placeholder momentarily PEEKS at the picture.
- *  - While PEEKING (or in full video mode): a video surface placeholder is
- *    shown. There is NO real remote video yet — the live WebRTC stream lands in
- *    DMY-16/17/18 — so this is an honest "video unavailable / placeholder" view,
- *    not a faked stream. A "Back to audio-only" affordance ends the peek.
+ *    (useAudioOnlyMode keeps it disabled, and the real VideoTrackController
+ *    pauses the send side), saving bandwidth + battery. Tapping the placeholder
+ *    momentarily PEEKS at the picture.
+ *  - While PEEKING (or in full video mode): when a live remote video stream is
+ *    present (`remoteStreamUrl`, from useVideoStream's real `ontrack`), it is
+ *    rendered with react-native-webrtc's `RTCView` (DMY-17). Until a real stream
+ *    arrives we still show an honest "connecting / video unavailable"
+ *    placeholder — never a faked picture. A "Back to audio-only" affordance ends
+ *    the peek.
  *
  * A toggle lets the user switch audio-only on/off (persisted in the store).
  *
@@ -18,6 +22,7 @@
  * spacing come from tokens; no raw hex.
  */
 import { StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { RTCView } from 'react-native-webrtc';
 
 import { useTheme } from '../../hooks/useTheme';
 import { useAppStore } from '../../store/useAppStore';
@@ -27,12 +32,19 @@ import type { VideoTrackController } from './types';
 export interface ParentMediaViewProps {
   /**
    * Video-track controller (DMY-17). Omit for the safe no-op used until the
-   * WebRTC layer is wired. Exposed mainly so tests can inject a spy.
+   * WebRTC layer is wired. In production this is the real sender-backed
+   * controller from {@link useVideoStream} so audio-only really pauses video.
    */
   readonly controller?: VideoTrackController;
+  /**
+   * The remote video stream URL to render with `RTCView` (the remote stream's
+   * id, from {@link useVideoStream}). Omit / `null` when there is no live video
+   * yet — the view then shows the honest placeholder, never a faked picture.
+   */
+  readonly remoteStreamUrl?: string | null;
 }
 
-function ParentMediaView({ controller }: ParentMediaViewProps) {
+function ParentMediaView({ controller, remoteStreamUrl }: ParentMediaViewProps) {
   // Night palette: the parent watches in a dark room.
   const theme = useTheme('dark');
   const audioOnlyEnabled = useAppStore(s => s.settings.audioOnlyEnabled);
@@ -43,6 +55,9 @@ function ParentMediaView({ controller }: ParentMediaViewProps) {
   });
 
   const showingVideo = mode === 'video';
+  // Only render the live picture when video is requested AND a real remote
+  // stream has actually arrived. Never fabricate a URL.
+  const hasLiveVideo = showingVideo && !!remoteStreamUrl;
 
   return (
     <View
@@ -50,7 +65,8 @@ function ParentMediaView({ controller }: ParentMediaViewProps) {
       style={[styles.container, { gap: theme.spacing.md }]}
     >
       {showingVideo ? (
-        // Video surface placeholder — the live WebRTC stream is DMY-16/17/18.
+        // Video surface: the LIVE remote stream (RTCView) once it has arrived,
+        // otherwise an honest "connecting" placeholder (never a faked picture).
         <View
           testID="parent-video-surface"
           style={[
@@ -62,6 +78,18 @@ function ParentMediaView({ controller }: ParentMediaViewProps) {
             },
           ]}
         >
+          {hasLiveVideo ? (
+            <RTCView
+              testID="parent-remote-video"
+              // The remote stream's id; RTCView renders the live video for it.
+              streamURL={remoteStreamUrl ?? undefined}
+              objectFit="cover"
+              style={[
+                styles.videoFill,
+                { borderRadius: theme.spacing.md },
+              ]}
+            />
+          ) : null}
           <Text
             style={[
               styles.surfaceLabel,
@@ -75,18 +103,20 @@ function ParentMediaView({ controller }: ParentMediaViewProps) {
           >
             {isPeeking ? 'Video · peeking' : 'Video'}
           </Text>
-          <Text
-            style={[
-              styles.surfaceHint,
-              {
-                color: theme.colors.textMuted,
-                fontSize: theme.typography.fontSizes.xs,
-                lineHeight: theme.typography.lineHeights.xs,
-              },
-            ]}
-          >
-            The live picture appears here once the connection is up.
-          </Text>
+          {hasLiveVideo ? null : (
+            <Text
+              style={[
+                styles.surfaceHint,
+                {
+                  color: theme.colors.textMuted,
+                  fontSize: theme.typography.fontSizes.xs,
+                  lineHeight: theme.typography.lineHeights.xs,
+                },
+              ]}
+            >
+              The live picture appears here once the connection is up.
+            </Text>
+          )}
 
           {isPeeking ? (
             <TouchableOpacity
@@ -216,6 +246,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  videoFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   surfaceLabel: {
     textAlign: 'center',

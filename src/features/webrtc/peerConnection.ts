@@ -33,7 +33,11 @@
  * is ever logged directly.
  */
 import { logger } from '../../services/logger';
-import type { MediaStreamLike, MediaStreamTrackLike } from './mediaTypes';
+import type {
+  MediaStreamLike,
+  MediaStreamTrackLike,
+  RtpSenderLike,
+} from './mediaTypes';
 import type {
   PeerConnection,
   PeerConnectionConfig,
@@ -249,6 +253,26 @@ export function createPeerConnection(
         logger.info('webrtc: local audio track added (sendonly)');
       } catch {
         logger.warn('webrtc: failed to add local audio track');
+      }
+    },
+
+    addVideoTrack(
+      track: MediaStreamTrackLike,
+      stream: MediaStreamLike,
+    ): RtpSenderLike | null {
+      if (typeof pc.addTrack !== 'function') {
+        // A minimal connection without media support: nothing to publish.
+        logger.warn('webrtc: addTrack unsupported; video track not published');
+        return null;
+      }
+      try {
+        const sender = pc.addTrack(track, stream) as RtpSenderLike | undefined;
+        // Coarse, non-PII fact only — no track ids / media content.
+        logger.info('webrtc: local video track added (sendonly)');
+        return sender ?? null;
+      } catch {
+        logger.warn('webrtc: failed to add local video track');
+        return null;
       }
     },
 

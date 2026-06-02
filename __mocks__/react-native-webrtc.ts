@@ -89,9 +89,21 @@ export const mediaDevices = {
   getUserMedia: jest.fn(async () => ({ getTracks: () => [] })),
 };
 
+/**
+ * Mock `RTCView` (DMY-17). The real one is a native host component that renders
+ * a remote/local video stream; under Jest we render a plain RN `View` carrying
+ * the same `streamURL`/`testID` props so a test can assert the view is mounted
+ * with the right stream id without any native surface.
+ */
+const React = require('react');
+const { View } = require('react-native');
+export const RTCView = (props: { streamURL?: string; testID?: string }) =>
+  React.createElement(View, props);
+
 export default {
   RTCPeerConnection,
   RTCSessionDescription,
   RTCIceCandidate,
   mediaDevices,
+  RTCView,
 };

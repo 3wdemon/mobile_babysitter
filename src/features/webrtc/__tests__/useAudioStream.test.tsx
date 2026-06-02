@@ -68,6 +68,7 @@ class MockPeerConnection implements PeerConnection {
       this.addedTracks.push({ track, stream });
     },
   );
+  addVideoTrack = jest.fn(() => null);
   on<K extends keyof PeerConnectionEvents>(
     event: K,
     handler: PeerConnectionEvents[K],
