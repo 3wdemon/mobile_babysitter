@@ -95,4 +95,6 @@ export {
   FONT_SIZES,
   FONT_WEIGHTS,
   LINE_HEIGHTS,
+  MAX_FONT_SIZE_MULTIPLIER,
+  scaledFontSize,
 } from './typography';

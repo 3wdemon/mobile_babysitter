@@ -76,6 +76,10 @@ function RoleSelectScreen(_props: OnboardingScreenProps<'RoleSelect'>) {
           <TouchableOpacity
             key={role}
             accessibilityRole="button"
+            accessibilityLabel={t(`onboarding.roleSelect.options.${role}.a11y`)}
+            accessibilityHint={t(
+              `onboarding.roleSelect.options.${role}.body`,
+            )}
             style={[
               styles.card,
               {

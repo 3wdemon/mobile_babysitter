@@ -39,7 +39,11 @@ describe('TalkButton', () => {
       />,
     );
     expect(screen.queryByTestId('talk-indicator')).toBeNull();
-    expect(screen.getByText('Hold to talk')).toBeTruthy();
+    // The caption is hidden from assistive tech (DMY-65), so the text query
+    // must opt into hidden elements to see the visible label.
+    expect(
+      screen.getByText('Hold to talk', { includeHiddenElements: true }),
+    ).toBeTruthy();
 
     rerender(
       <TalkButton
@@ -49,7 +53,64 @@ describe('TalkButton', () => {
       />,
     );
     expect(screen.getByTestId('talk-indicator')).toBeTruthy();
-    expect(screen.getByText('Talking…')).toBeTruthy();
+    expect(
+      screen.getByText('Talking…', { includeHiddenElements: true }),
+    ).toBeTruthy();
+  });
+
+  it('exposes a descriptive button label + role (a11y), not the raw caption (DMY-65)', () => {
+    const { rerender } = render(
+      <TalkButton
+        talking={false}
+        onStartTalking={jest.fn()}
+        onStopTalking={jest.fn()}
+      />,
+    );
+
+    // Icon-only-style control: the screen reader gets the full descriptive
+    // label from the catalog, queried by role + accessible name.
+    const idle = screen.getByRole('button', {
+      name: 'Hold to talk to the baby unit',
+    });
+    expect(idle).toBeTruthy();
+    expect(idle.props.accessibilityState).toMatchObject({
+      disabled: false,
+      busy: false,
+    });
+
+    rerender(
+      <TalkButton
+        talking={true}
+        onStartTalking={jest.fn()}
+        onStopTalking={jest.fn()}
+      />,
+    );
+    const talkingBtn = screen.getByRole('button', {
+      name: 'Talking — release to stop',
+    });
+    expect(talkingBtn.props.accessibilityState).toMatchObject({ busy: true });
+
+    // The TALKING indicator announces a meaningful label, and its decorative
+    // status dot is hidden from assistive tech.
+    const indicator = screen.getByLabelText('Talking to the baby unit');
+    expect(indicator).toBeTruthy();
+  });
+
+  it('hides the decorative caption/dot from assistive tech (no double-read)', () => {
+    render(
+      <TalkButton
+        talking
+        onStartTalking={jest.fn()}
+        onStopTalking={jest.fn()}
+      />,
+    );
+    // The visible caption inside the button is hidden so the button's own
+    // label is the single announced string.
+    const caption = screen.getByText('Talking…', {
+      includeHiddenElements: true,
+    });
+    expect(caption.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(caption.props.accessibilityElementsHidden).toBe(true);
   });
 
   it('is inert when disabled (no callbacks fire) and shows the unavailable hint', () => {

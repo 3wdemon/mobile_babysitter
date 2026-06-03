@@ -14,11 +14,22 @@
  * button is inert and visibly dimmed.
  *
  * Rendered against the DARK / night palette (the parent watches in a dark
- * bedroom): `useTheme('dark')`. All colours/typography/spacing come from tokens.
+ * bedroom): `useTheme('dark')`. All colours/typography/spacing come from tokens,
+ * and all copy/labels come from the i18n catalog (`webrtc.talk.*`).
+ *
+ * Accessibility (DMY-65): the control is a `button` with an explicit, honest
+ * `accessibilityLabel` (its visible "Talking…/Hold to talk" caption is just a
+ * short glyph-like word, so the screen reader gets a descriptive label instead
+ * of the raw caption). `accessibilityState` carries the disabled/busy state. The
+ * decorative status dot is hidden from assistive tech so the indicator reads as
+ * a single, meaningful line. Text scales with the OS font size (we never set
+ * `allowFontScaling={false}`) and the visible label is capped at
+ * `maxFontSizeMultiplier` so the fixed button does not overflow at extreme sizes.
  */
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../../hooks/useTheme';
+import { useTranslation } from '../../hooks/useTranslation';
 
 export interface TalkButtonProps {
   /** Whether the parent is currently talking (outgoing track enabled). */
@@ -42,6 +53,7 @@ function TalkButton({
 }: TalkButtonProps) {
   // Night palette: the parent watches in a dark room.
   const theme = useTheme('dark');
+  const { t } = useTranslation();
 
   const backgroundColor = disabled
     ? theme.colors.surface
@@ -56,7 +68,14 @@ function TalkButton({
         accessibilityRole="button"
         accessibilityState={{ disabled, busy: talking }}
         accessibilityLabel={
-          talking ? 'Talking — release to stop' : 'Hold to talk'
+          talking
+            ? t('webrtc.talk.buttonA11yTalking')
+            : t('webrtc.talk.buttonA11yIdle')
+        }
+        accessibilityHint={
+          disabled
+            ? t('webrtc.talk.hintUnavailable')
+            : t('webrtc.talk.hintReady')
         }
         testID="talk-button"
         activeOpacity={0.85}
@@ -76,6 +95,11 @@ function TalkButton({
         ]}
       >
         <Text
+          // The caption is decorative for assistive tech: the TouchableOpacity
+          // already exposes a full descriptive accessibilityLabel above.
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          maxFontSizeMultiplier={theme.typography.maxFontSizeMultiplier}
           style={[
             styles.label,
             {
@@ -85,7 +109,9 @@ function TalkButton({
             },
           ]}
         >
-          {talking ? 'Talking…' : 'Hold to talk'}
+          {talking
+            ? t('webrtc.talk.talkingLabel')
+            : t('webrtc.talk.idleLabel')}
         </Text>
       </TouchableOpacity>
 
@@ -93,13 +119,21 @@ function TalkButton({
         <View
           testID="talk-indicator"
           accessibilityRole="text"
-          accessibilityLabel="Talking to baby"
+          accessibilityLabel={t('webrtc.talk.indicatorA11y')}
           style={[styles.indicatorRow, { gap: theme.spacing.sm }]}
         >
           <View
+            // Decorative status dot — hide from assistive tech so the row reads
+            // as one meaningful line via the label above.
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
             style={[styles.dot, { backgroundColor: theme.colors.danger }]}
           />
           <Text
+            // Visible duplicate of the row's label — hidden from assistive
+            // tech to avoid a double announcement.
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
             style={[
               styles.indicatorLabel,
               {
@@ -110,7 +144,7 @@ function TalkButton({
               },
             ]}
           >
-            Your voice is going to the baby unit
+            {t('webrtc.talk.indicatorText')}
           </Text>
         </View>
       ) : (
@@ -125,8 +159,8 @@ function TalkButton({
           ]}
         >
           {disabled
-            ? 'Talk is available once the connection is up.'
-            : 'Hold the button to speak. Echo cancellation keeps it feedback-free.'}
+            ? t('webrtc.talk.hintUnavailable')
+            : t('webrtc.talk.hintReady')}
         </Text>
       )}
     </View>
