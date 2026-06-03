@@ -75,6 +75,13 @@ export interface SignalingSessionOptions {
   readonly peerConfig?: PeerConnectionConfig;
   /** Called whenever the high-level session status changes. */
   readonly onStatusChange?: (status: SignalingSessionStatus) => void;
+  /**
+   * Called once the peer sent `bye` (DMY-45) — a CLEAN remote hangup, distinct
+   * from an unclean drop. Fires BEFORE the `disconnected` status so the hook can
+   * mark the teardown clean and suppress auto-reconnect (we should not chase a
+   * peer that deliberately left). The session then closes the pc + transport.
+   */
+  readonly onBye?: () => void;
   /** Called when a remote media track arrives (for the media layer, DMY-17). */
   readonly onRemoteTrack?: (event: unknown) => void;
   /**
@@ -125,6 +132,7 @@ export class SignalingSession {
   private readonly factory: PeerConnectionFactory;
   private readonly peerConfig?: PeerConnectionConfig;
   private readonly onStatusChange?: (status: SignalingSessionStatus) => void;
+  private readonly onBye?: () => void;
   private readonly onRemoteTrack?: (event: unknown) => void;
   private readonly onLocalDescription?: (description: SignalingSdp) => void;
   private readonly onPeerConnection?: (
@@ -135,6 +143,8 @@ export class SignalingSession {
   private status: SignalingSessionStatus = 'idle';
   private started = false;
   private stopped = false;
+  /** Set once the peer sent `bye`: a clean remote close (no `bye` echoed back). */
+  private byeReceived = false;
 
   /**
    * ICE candidates received from the peer BEFORE the remote description was
@@ -151,6 +161,7 @@ export class SignalingSession {
     this.factory = options.createPeerConnection ?? defaultCreatePeerConnection;
     this.peerConfig = options.peerConfig;
     this.onStatusChange = options.onStatusChange;
+    this.onBye = options.onBye;
     this.onRemoteTrack = options.onRemoteTrack;
     this.onLocalDescription = options.onLocalDescription;
     this.onPeerConnection = options.onPeerConnection;
@@ -298,8 +309,23 @@ export class SignalingSession {
           await this.handleRemoteIce(message.candidate);
           break;
         case 'bye':
+          // Remote polite hangup (DMY-45): surface `disconnected` AND tear the
+          // session down NOW (close the peer connection + transport) rather than
+          // waiting for unmount — otherwise the camera/mic would stay live and
+          // the connection would leak until the screen is left. `byeReceived`
+          // marks this as a CLEAN remote close so teardown does not also emit
+          // our own `bye` back at a peer that already left.
           logger.info('webrtc/signaling: peer said bye');
+          this.byeReceived = true;
+          // Notify BEFORE the status flips so the hook marks this clean and
+          // suppresses auto-reconnect, then surface `disconnected` + tear down.
+          try {
+            this.onBye?.();
+          } catch {
+            // A subscriber must never break teardown.
+          }
           this.setStatus('disconnected');
+          this.teardown();
           break;
       }
     } catch (error) {
@@ -416,8 +442,10 @@ export class SignalingSession {
     if (this.stopped) {
       return;
     }
-    // Best-effort polite hangup before we tear the transport down.
-    if (this.started) {
+    // Best-effort polite hangup before we tear the transport down — UNLESS the
+    // peer already said `bye` (it has gone; echoing one back is pointless and
+    // the transport may already be closing).
+    if (this.started && !this.byeReceived) {
       try {
         this.transport.send({
           type: 'bye',
