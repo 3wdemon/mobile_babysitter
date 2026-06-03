@@ -117,6 +117,14 @@ jest.mock('@react-native-community/netinfo');
 // without touching native code.
 jest.mock('react-native-device-info');
 
+// @notifee/react-native (DMY-46) posts local notifications through a native
+// module with no JS fallback under Jest. Use the manual mock in
+// __mocks__/@notifee/react-native.ts (inert resolved-promise spies; reset via
+// __reset) so the require()-guarded notifee presenter — and any screen that
+// builds it — runs without touching native code. Presenter unit tests inject a
+// fake notifee module directly through createPresenterFromNotifee.
+jest.mock('@notifee/react-native');
+
 // react-native-bootsplash (DMY-58) bridges to the native iOS storyboard /
 // Android SplashScreen window with no JS fallback under Jest. Use the manual
 // mock in __mocks__/react-native-bootsplash.ts (inert spies) so any test that

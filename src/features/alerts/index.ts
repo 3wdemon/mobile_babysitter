@@ -28,6 +28,19 @@ export {
   createNoopAlertSoundPlayer,
 } from './alertSoundPlayer';
 
+export {
+  noopNotificationPresenter,
+  createNoopNotificationPresenter,
+  createNotifeePresenter,
+  createPresenterFromNotifee,
+  notificationContentForType,
+  ALERT_CHANNEL_ID,
+} from './notificationPresenter';
+export type {
+  AlertNotificationPresenter,
+  NotifeeLike,
+} from './notificationPresenter';
+
 export { useAlerts } from './useAlerts';
 export type {
   AlertEventSource,

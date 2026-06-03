@@ -12,6 +12,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { useAlerts } from '../useAlerts';
 import { soundIdForType } from '../alertSoundMap';
 import type { AlertEventSource } from '../useAlerts';
+import type { AlertNotificationPresenter } from '../notificationPresenter';
 import type { AlertSoundPlayer, AlertType } from '../alertTypes';
 import { useAppStore } from '../../../store/useAppStore';
 
@@ -39,6 +40,12 @@ function makeSpyPlayer(): AlertSoundPlayer & {
   stop: jest.Mock;
 } {
   return { playSound: jest.fn(), stop: jest.fn() };
+}
+
+function makeSpyPresenter(): AlertNotificationPresenter & {
+  present: jest.Mock;
+} {
+  return { present: jest.fn() };
 }
 
 describe('useAlerts', () => {
@@ -210,6 +217,130 @@ describe('useAlerts', () => {
     act(() => useAppStore.getState().toggleAlertSounds());
     act(() => emit('cry'));
     expect(player.playSound).toHaveBeenCalledTimes(1);
+  });
+
+  // --- DMY-46: local notification sink (in parallel to the sound) ----------
+
+  it('presents a notification AND plays the sound for a raised event', () => {
+    const { source, emit } = makeStubSource();
+    const player = makeSpyPlayer();
+    const presenter = makeSpyPresenter();
+
+    renderHook(() => useAlerts({ source, player, presenter }));
+    act(() => emit('cry'));
+
+    // Both sinks fire in parallel for the one raised event.
+    expect(player.playSound).toHaveBeenCalledTimes(1);
+    expect(presenter.present).toHaveBeenCalledTimes(1);
+    expect(presenter.present.mock.calls[0][0]).toMatchObject({ type: 'cry' });
+  });
+
+  it('presents exactly once per raised event', () => {
+    const { source, emit } = makeStubSource();
+    const presenter = makeSpyPresenter();
+
+    renderHook(() => useAlerts({ source, presenter }));
+    // Ascending priority so each preempts the previous within the shared tick
+    // (mirrors the "different sounds" sound-sink test): both are RAISED.
+    act(() => {
+      emit('motion');
+      emit('cry');
+    });
+
+    expect(presenter.present).toHaveBeenCalledTimes(2);
+    expect(presenter.present.mock.calls.map(c => c[0].type)).toEqual([
+      'motion',
+      'cry',
+    ]);
+  });
+
+  it('does NOT present when the event is throttled (cooldown drop)', () => {
+    const { source, emit } = makeStubSource();
+    const presenter = makeSpyPresenter();
+
+    renderHook(() => useAlerts({ source, presenter }));
+    act(() => {
+      emit('noise');
+      emit('noise'); // dropped: same type within cooldown
+      emit('noise');
+    });
+
+    // Only the first (raised) noise notifies; the throttled repeats do not.
+    expect(presenter.present).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT present a lower-priority event dropped by priority', () => {
+    const { source, emit } = makeStubSource();
+    const presenter = makeSpyPresenter();
+
+    renderHook(() => useAlerts({ source, presenter }));
+    act(() => {
+      emit('cry'); // raised (highest priority, occupies channel)
+      emit('noise'); // dropped by priority while cry is sounding
+    });
+
+    expect(presenter.present).toHaveBeenCalledTimes(1);
+    expect(presenter.present.mock.calls[0][0]).toMatchObject({ type: 'cry' });
+  });
+
+  it('does NOT present when alerts are disabled (whole event dropped)', () => {
+    act(() => useAppStore.getState().toggleAlertSounds()); // -> false
+    const { source, emit } = makeStubSource();
+    const presenter = makeSpyPresenter();
+
+    renderHook(() => useAlerts({ source, presenter }));
+    act(() => emit('cry'));
+
+    expect(presenter.present).not.toHaveBeenCalled();
+  });
+
+  it('a presenter throw does not stop the sound or the pipeline', () => {
+    const { source, emit } = makeStubSource();
+    const player = makeSpyPlayer();
+    const presenter: AlertNotificationPresenter = {
+      present: jest.fn(() => {
+        throw new Error('notifee blew up');
+      }),
+    };
+    const onAlert = jest.fn();
+
+    const { result } = renderHook(() =>
+      useAlerts({ source, player, presenter, onAlert }),
+    );
+
+    expect(() => act(() => emit('cry'))).not.toThrow();
+    // Sound still played, state + callback still updated despite the throw.
+    expect(player.playSound).toHaveBeenCalledTimes(1);
+    expect(onAlert).toHaveBeenCalledTimes(1);
+    expect(result.current.lastAlert?.type).toBe('cry');
+  });
+
+  it('a presenter async rejection does not break the pipeline', async () => {
+    const { source, emit } = makeStubSource();
+    const player = makeSpyPlayer();
+    const presenter: AlertNotificationPresenter = {
+      present: jest.fn(() => Promise.reject(new Error('async fail'))),
+    };
+
+    const { result } = renderHook(() =>
+      useAlerts({ source, player, presenter }),
+    );
+
+    await act(async () => {
+      emit('cry');
+      // Let the rejected promise settle so an unhandled rejection would surface.
+      await Promise.resolve();
+    });
+
+    expect(player.playSound).toHaveBeenCalledTimes(1);
+    expect(result.current.lastAlert?.type).toBe('cry');
+  });
+
+  it('defaults to the no-op presenter without throwing', () => {
+    const { source, emit } = makeStubSource();
+    const { result } = renderHook(() => useAlerts({ source }));
+    act(() => emit('motion'));
+    expect(result.current.lastAlert?.type).toBe('motion');
   });
 
   it('never exposes media in the raised alert (privacy)', () => {
