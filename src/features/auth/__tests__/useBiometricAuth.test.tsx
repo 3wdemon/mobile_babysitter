@@ -12,6 +12,16 @@ import { useBiometricAuth } from '../useBiometricAuth';
 import { DEFAULT_LOCKOUT_POLICY } from '../lockoutPolicy';
 import { setPin } from '../pinService';
 
+// These tests drive the real unlock flow, which runs the genuine slow KDF
+// (PBKDF2-HMAC-SHA256, 100k iterations, pure JS) on each setPin/verifyPin. The
+// correct-PIN paths derive 2-3 times; under `--coverage` instrumentation and
+// parallel-worker CPU contention a single derivation can exceed Jest's 5s
+// default, causing intermittent timeouts that are pure test-budget noise, NOT a
+// logic failure (verified: the same tests pass deterministically in isolation
+// at ~1.2s). A generous suite-level timeout makes them robust under load. The
+// production unlock latency is unchanged — this only relaxes the test deadline.
+jest.setTimeout(30_000);
+
 const { __resetAllMmkv } = jest.requireMock('react-native-mmkv') as {
   __resetAllMmkv: () => void;
 };

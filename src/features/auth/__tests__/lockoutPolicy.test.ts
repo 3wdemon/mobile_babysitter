@@ -142,6 +142,22 @@ describe('lockoutPolicy (DMY-44)', () => {
       expect(status.remainingMs).toBeLessThanOrEqual(POLICY.maxCooldownMs + 1000);
     });
 
+    it('does NOT shorten the displayed deadline of a genuine in-range lock (read cap is a guard, not a shortener)', () => {
+      // A real lock at the full cap: getLockoutStatus must surface its TRUE
+      // deadline/remaining, not the ceiling-minus-something. The display cap may
+      // only ever clamp DOWN an out-of-range value, never trim a legitimate one.
+      const now = T0;
+      const genuine: LockoutState = {
+        failedAttempts: 6,
+        lockedUntil: now + POLICY.maxCooldownMs,
+        lastFailedAt: now,
+      };
+      const status = getLockoutStatus(genuine, POLICY, now);
+      expect(status.locked).toBe(true);
+      expect(status.lockedUntil).toBe(now + POLICY.maxCooldownMs);
+      expect(status.remainingMs).toBe(POLICY.maxCooldownMs);
+    });
+
     it('reports attemptsRemaining counting down below the threshold', () => {
       let state = fresh();
       expect(getLockoutStatus(state, POLICY, T0).attemptsRemaining).toBe(3);
@@ -201,6 +217,80 @@ describe('lockoutPolicy (DMY-44)', () => {
     it('preserves a null (not-locked) lockedUntil', () => {
       const cleared = { ...EMPTY_LOCKOUT };
       expect(boundLockoutOnHydration(cleared, POLICY, T0)).toBe(cleared);
+    });
+
+    // Anti-regression for the FIX itself: the clamp must never SHORTEN a
+    // genuine, in-range lock. The longest a legitimate lock can run is the full
+    // exponential backoff at the cap — i.e. exactly `now + maxCooldownMs`. A lock
+    // landing right at (or one ms under) the ceiling is real and must survive the
+    // bound untouched; clamping it early would cut a parent's real lockout short
+    // and weaken the brute-force brake.
+    it('does NOT shorten a genuine lock exactly at now + maxCooldownMs (boundary, inclusive)', () => {
+      const now = T0;
+      // A 4th+ failure at full backoff would set lockedUntil = now + maxCooldownMs.
+      const atCap: LockoutState = {
+        failedAttempts: 7,
+        lockedUntil: now + POLICY.maxCooldownMs,
+        lastFailedAt: now,
+      };
+      const bounded = boundLockoutOnHydration(atCap, POLICY, now);
+      // `<= ceiling` (ceiling = now + maxCooldownMs + margin) => returned as-is.
+      expect(bounded).toBe(atCap);
+      expect(bounded.lockedUntil).toBe(now + POLICY.maxCooldownMs);
+    });
+
+    it('does NOT shorten a genuine lock just under the ceiling (margin band)', () => {
+      const now = T0;
+      // Within the clock-skew margin above maxCooldownMs: still legitimate, must
+      // not be clamped (the margin exists precisely to absorb benign skew).
+      const justUnder: LockoutState = {
+        failedAttempts: 6,
+        lockedUntil: now + POLICY.maxCooldownMs + 999, // < margin (1000)
+        lastFailedAt: now,
+      };
+      const bounded = boundLockoutOnHydration(justUnder, POLICY, now);
+      expect(bounded).toBe(justUnder);
+      expect(bounded.lockedUntil).toBe(now + POLICY.maxCooldownMs + 999);
+    });
+
+    it('clamps the FIRST ms beyond the ceiling (clamp engages exactly at +margin+1)', () => {
+      const now = T0;
+      const ceiling = now + POLICY.maxCooldownMs + 1000; // margin = 1000
+      const oneBeyond: LockoutState = {
+        failedAttempts: 9,
+        lockedUntil: ceiling + 1,
+        lastFailedAt: now,
+      };
+      const bounded = boundLockoutOnHydration(oneBeyond, POLICY, now);
+      expect(bounded.lockedUntil).toBe(ceiling);
+    });
+
+    // The security invariant stated in the fix, asserted directly: for ANY
+    // persisted lockedUntil, after hydration it is <= now + maxCooldownMs (+margin).
+    it('invariant: post-hydration lockedUntil <= now + maxCooldownMs (+margin) for any input', () => {
+      const now = T0;
+      const ceiling = now + POLICY.maxCooldownMs + 1000;
+      const inputs = [
+        0,
+        1,
+        now - 5000,
+        now,
+        now + POLICY.baseCooldownMs,
+        now + POLICY.maxCooldownMs,
+        ceiling,
+        ceiling + 1,
+        now + 365 * 24 * 3600 * 1000,
+        8.64e15,
+      ];
+      for (const lockedUntil of inputs) {
+        const out = boundLockoutOnHydration(
+          { failedAttempts: 3, lockedUntil, lastFailedAt: null },
+          POLICY,
+          now,
+        );
+        expect(out.lockedUntil).not.toBeNull();
+        expect(out.lockedUntil as number).toBeLessThanOrEqual(ceiling);
+      }
     });
   });
 

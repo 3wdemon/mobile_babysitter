@@ -7,6 +7,11 @@ import {
   utf8ToBytes,
 } from '../pbkdf2';
 
+// Some vectors run high-iteration PBKDF2 in pure JS; under `--coverage` and
+// parallel CPU load this can exceed Jest's 5s default. Relax the deadline so the
+// KDF vector suite is robust under load (production latency is unaffected).
+jest.setTimeout(30_000);
+
 describe('pbkdf2 building blocks', () => {
   describe('sha256Bytes', () => {
     it('matches the known digest of the empty string', () => {

@@ -10,6 +10,12 @@ import {
 } from '../pinService';
 import { sha256Hex } from '../sha256';
 
+// setPin/verifyPin run the real slow KDF (PBKDF2, 100k iterations, pure JS).
+// Under `--coverage` instrumentation + parallel CPU contention a derivation can
+// exceed Jest's 5s default; relax the deadline so the suite is robust under load.
+// Production latency is unaffected — this only widens the test timeout.
+jest.setTimeout(30_000);
+
 const keychainMock = jest.requireMock('react-native-keychain') as {
   __resetKeychainMock: () => void;
   __getStored: (

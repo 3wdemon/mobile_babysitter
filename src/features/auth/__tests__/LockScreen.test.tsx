@@ -10,6 +10,14 @@ import LockScreen from '../screens/LockScreen';
 import { setPin } from '../pinService';
 import { useAppStore } from '../../../store/useAppStore';
 
+// The correct-PIN unlock paths here run the genuine slow KDF (PBKDF2, 100k
+// iterations, pure JS) via setPin + verifyPin. Under `--coverage` instrumentation
+// and parallel CPU contention these can blow Jest's 5s default — an intermittent
+// timeout that is test-budget noise, not a logic failure (the same tests pass
+// deterministically in isolation). Relax the deadline; production latency is
+// unaffected.
+jest.setTimeout(30_000);
+
 const bioMock = jest.requireMock('react-native-biometrics') as {
   __resetBiometricsMock: () => void;
   __setSensorAvailable: (available: boolean, type?: string) => void;
