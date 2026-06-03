@@ -59,6 +59,14 @@ import {
 } from './videoStream';
 import { createSenderVideoTrackController } from './videoTrackController';
 import { useSignaling } from './useSignaling';
+import {
+  pushAlertsToChannel,
+  receiveAlertsFromChannel,
+} from '../alerts/alertChannel';
+import type {
+  AlertChannelReceiverOptions,
+  AlertChannelSource,
+} from '../alerts/alertChannel';
 import type { AudioPlayback } from './audioPlayback';
 import type { BandwidthSignal, BandwidthSignalSource } from './videoStream';
 import type {
@@ -67,13 +75,33 @@ import type {
   MediaStreamLike,
   RtpSenderLike,
 } from './mediaTypes';
-import type { PeerConnection } from './signalingTypes';
+import type { DataChannel, PeerConnection } from './signalingTypes';
 import type { VideoTrackController } from './types';
 import type { UseSignalingOptions, UseSignalingState } from './useSignaling';
 
 /** Options for {@link useMediaSession}. */
 export interface UseMediaSessionOptions
-  extends Omit<UseSignalingOptions, 'onPeerConnection' | 'onRemoteTrack'> {
+  extends Omit<
+    UseSignalingOptions,
+    'onPeerConnection' | 'onRemoteTrack' | 'onAlertChannel'
+  > {
+  /**
+   * Parent-unit alert sinks (DMY-71). When set, the live alert data channel
+   * (DMY-50) — opened by the baby and received here via the `datachannel` event —
+   * is wired to {@link receiveAlertsFromChannel}, so an alert raised on the baby
+   * fires a local notification (presenter, DMY-46) + haptic (DMY-28) on the
+   * parent IN-SESSION. Omit to leave the channel unwired on this side.
+   */
+  readonly alertReceiver?: AlertChannelReceiverOptions;
+  /**
+   * Baby-unit alert source (DMY-71). When set, the live alert data channel this
+   * baby opens is fed every raised {@link AlertEvent} from this source via
+   * {@link pushAlertsToChannel}. The real producer is the alert pipeline
+   * (cry detection DMY-49 / motion DMY-25); until that detector is exposed as a
+   * stream, a call site may drive a source itself. Omit to open the channel
+   * without pushing yet.
+   */
+  readonly alertSource?: AlertChannelSource;
   /** Media-devices source for baby-unit capture. Omit for the real one. */
   readonly mediaDevices?: MediaDevicesLike;
   /**
@@ -134,6 +162,8 @@ export function useMediaSession(
     initiallyMuted = false,
     bandwidth,
     videoEnabled = true,
+    alertReceiver,
+    alertSource,
     ...signalingOptions
   } = options;
 
@@ -180,6 +210,10 @@ export function useMediaSession(
   mutedRef.current = muted;
   const qualityIndexRef = useRef(qualityIndex);
   qualityIndexRef.current = qualityIndex;
+  const alertReceiverRef = useRef(alertReceiver);
+  alertReceiverRef.current = alertReceiver;
+  const alertSourceRef = useRef(alertSource);
+  alertSourceRef.current = alertSource;
 
   const safePlayback = useMemo(
     () => createSafeAudioPlayback(resolvedPlayback),
@@ -263,11 +297,32 @@ export function useMediaSession(
     }
   }, []);
 
+  // Alert data channel wiring (DMY-71). The session owns the channel lifecycle
+  // and hands the ready channel here; we bind it BY ROLE to the alerts feature:
+  //   - parent (initiator): drive receiveAlertsFromChannel → local notification
+  //     (DMY-46) + haptic (DMY-28).
+  //   - baby (responder): feed every raised AlertEvent over the channel from the
+  //     injected source (cry detection DMY-49 / motion, when exposed).
+  // The returned cleanup detaches the listener on teardown; the session closes
+  // the channel itself and re-invokes this with a fresh channel on a reconnect.
+  const onAlertChannel = useCallback((channel: DataChannel) => {
+    if (roleRef.current === 'baby') {
+      const source = alertSourceRef.current;
+      if (!source) {
+        return;
+      }
+      return pushAlertsToChannel(channel, source);
+    }
+    // Parent: receive alerts and fire the in-session notification + haptic.
+    return receiveAlertsFromChannel(channel, alertReceiverRef.current);
+  }, []);
+
   const signaling = useSignaling({
     ...signalingOptions,
     onPeerConnection,
     onLocalDescription,
     onRemoteTrack,
+    onAlertChannel,
   });
 
   const status = signaling.status;

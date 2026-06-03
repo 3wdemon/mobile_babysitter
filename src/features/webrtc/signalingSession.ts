@@ -33,8 +33,10 @@
  * `sdp`/`candidate` keys.
  */
 import { logger } from '../../services/logger';
+import { ALERT_CHANNEL_LABEL } from '../alerts/alertChannel';
 import { createPeerConnection as defaultCreatePeerConnection } from './peerConnection';
 import type {
+  DataChannel,
   PeerConnection,
   PeerConnectionConfig,
   PeerConnectionFactory,
@@ -101,6 +103,30 @@ export interface SignalingSessionOptions {
    * not capture).
    */
   readonly onPeerConnection?: (pc: PeerConnection) => void | Promise<void>;
+  /**
+   * Alert data channel seam (DMY-71) — wires the in-session, server-free alert
+   * transport (DMY-50) into the LIVE handshake.
+   *
+   * The session owns the channel's LIFECYCLE (create vs receive, by role) and
+   * hands the ready {@link DataChannel} to this single callback; the caller binds
+   * it to the alerts feature:
+   *   - **responder (baby):** the session opens `'baby-monitor-alert'`
+   *     (`{ordered:true}`) on the fresh peer connection BEFORE the answer, so the
+   *     channel's m-line is part of the initial negotiation, then invokes this
+   *     callback. The caller wires the baby's raised-{@link AlertEvent} source to
+   *     the channel (e.g. `pushAlertsToChannel`).
+   *   - **initiator (parent):** the session subscribes to the peer's
+   *     `datachannel` event and, when the alert channel surfaces, invokes this
+   *     callback. The caller drives `receiveAlertsFromChannel` (→ local
+   *     notification DMY-46 + haptic DMY-28).
+   *
+   * The callback MAY return a cleanup function; the session calls it on teardown
+   * (stop / `bye` / failure) so the alert subscription is detached without leaks,
+   * and re-invokes the callback with a FRESH channel on a reconnect (a new
+   * session is created per attempt, so each gets its own channel + cleanup).
+   * A thrown callback is isolated — it can never break the handshake.
+   */
+  readonly onAlertChannel?: (channel: DataChannel) => (() => void) | void;
 }
 
 /** Map a {@link PeerConnectionState} onto the session status. */
@@ -138,8 +164,19 @@ export class SignalingSession {
   private readonly onPeerConnection?: (
     pc: PeerConnection,
   ) => void | Promise<void>;
+  private readonly onAlertChannel?: (
+    channel: DataChannel,
+  ) => (() => void) | void;
 
   private pc: PeerConnection | null = null;
+  /**
+   * The alert data channel for this session (DMY-71), if any. On the responder
+   * it is the channel WE opened; on the initiator it is the one received via the
+   * `datachannel` event. Closed on teardown.
+   */
+  private alertChannel: DataChannel | null = null;
+  /** Cleanup returned by {@link onAlertChannel}; detaches the alert wiring. */
+  private alertChannelCleanup: (() => void) | null = null;
   private status: SignalingSessionStatus = 'idle';
   private started = false;
   private stopped = false;
@@ -165,6 +202,7 @@ export class SignalingSession {
     this.onRemoteTrack = options.onRemoteTrack;
     this.onLocalDescription = options.onLocalDescription;
     this.onPeerConnection = options.onPeerConnection;
+    this.onAlertChannel = options.onAlertChannel;
   }
 
   /** Current high-level status. */
@@ -208,6 +246,18 @@ export class SignalingSession {
       // may prompt for the mic and must finish first.
       if (this.onPeerConnection) {
         await this.onPeerConnection(pc);
+      }
+
+      // RESPONDER (baby): open the alert data channel BEFORE the answer so its
+      // m-line is part of the initial negotiation (DMY-71). The answer is built
+      // later in handleOffer, so creating it here is safely pre-negotiation. A
+      // `null` (connection without data-channel support) is a no-op — alerts-
+      // over-datachannel are simply unavailable then.
+      if (this.role === 'responder') {
+        const channel = pc.createDataChannel(ALERT_CHANNEL_LABEL);
+        if (channel) {
+          this.attachAlertChannel(channel);
+        }
       }
 
       await this.transport.connect();
@@ -269,6 +319,52 @@ export class SignalingSession {
         }
       }),
     );
+
+    // INITIATOR (parent): the peer (baby) opens the alert channel; receive it via
+    // the `datachannel` event and hand it to the caller (DMY-71). Only the alert
+    // channel (matched by its negotiated label) is wired — any other future
+    // channel is ignored here.
+    this.unsubscribes.push(
+      pc.on('datachannel', channel => {
+        if (channel.label !== ALERT_CHANNEL_LABEL) {
+          return;
+        }
+        this.attachAlertChannel(channel);
+      }),
+    );
+  }
+
+  /**
+   * Adopt an alert {@link DataChannel} (created by us on the responder, received
+   * via `datachannel` on the initiator) and wire it to the caller via
+   * {@link onAlertChannel}. Idempotent per session: a second channel is ignored
+   * (we keep one alert channel). The caller's optional cleanup is stored for
+   * teardown. A thrown callback is isolated so it cannot break the handshake.
+   */
+  private attachAlertChannel(channel: DataChannel): void {
+    if (this.stopped) {
+      try {
+        channel.close();
+      } catch {
+        // ignore — session already torn down.
+      }
+      return;
+    }
+    if (this.alertChannel) {
+      // Already have one; ignore extras so we never double-wire.
+      return;
+    }
+    this.alertChannel = channel;
+    if (!this.onAlertChannel) {
+      return;
+    }
+    try {
+      const cleanup = this.onAlertChannel(channel);
+      this.alertChannelCleanup = typeof cleanup === 'function' ? cleanup : null;
+    } catch {
+      // An alert-wiring subscriber must never break the session.
+      logger.warn('webrtc/signaling: onAlertChannel threw');
+    }
   }
 
   private wireTransport(): void {
@@ -473,6 +569,26 @@ export class SignalingSession {
       }
     }
     this.pendingRemoteIce.splice(0);
+
+    // Detach the alert wiring (caller's source/receiver subscription) BEFORE
+    // closing the channel, so no handler leaks across a reconnect (DMY-71). The
+    // session is recreated per attempt, so the next attempt gets a fresh channel.
+    if (this.alertChannelCleanup) {
+      try {
+        this.alertChannelCleanup();
+      } catch {
+        // ignore — best-effort detach.
+      }
+      this.alertChannelCleanup = null;
+    }
+    if (this.alertChannel) {
+      try {
+        this.alertChannel.close();
+      } catch {
+        // ignore — best-effort close.
+      }
+      this.alertChannel = null;
+    }
 
     if (this.pc) {
       try {

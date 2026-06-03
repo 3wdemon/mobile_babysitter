@@ -43,10 +43,13 @@ import {
   VIDEO_QUALITY_LADDER,
 } from './videoStream';
 import { createSignalingSession, SignalingSession } from './signalingSession';
+import { pushAlertsToChannel } from '../alerts/alertChannel';
+import type { AlertChannelSource } from '../alerts/alertChannel';
 import type { SignalingSessionStatus } from './signalingSession';
 import type { LocalVideoCapture } from './videoStream';
 import type { MediaDevicesLike, RtpSenderLike } from './mediaTypes';
 import type {
+  DataChannel,
   PeerConnection,
   PeerConnectionConfig,
   PeerConnectionFactory,
@@ -148,6 +151,16 @@ export interface BabyBroadcastOptions {
   readonly maxParents?: number;
   /** Called whenever the connected-parents list changes (for the UI). */
   readonly onParentsChange?: (parents: readonly BroadcastParent[]) => void;
+  /**
+   * Baby-unit alert source (DMY-71). When set, EACH parent's per-peer alert data
+   * channel (opened by its responder session, DMY-50) is fed every raised
+   * {@link AlertEvent} from this source via {@link pushAlertsToChannel}, so one
+   * detection FANS OUT a notification to all connected parents in-session. The
+   * real producer is the alert pipeline (cry detection DMY-49 / motion DMY-25);
+   * omit to open the channels without pushing yet. Each peer subscribes
+   * independently and is detached cleanly when that peer leaves (no leak).
+   */
+  readonly alertSource?: AlertChannelSource;
 }
 
 /** Public surface of the fan-out manager. */
@@ -201,6 +214,7 @@ export function createBabyBroadcast(
     peerConfig,
     maxParents = MAX_PARENTS,
     onParentsChange,
+    alertSource,
   } = options;
 
   const peers = new Map<string, PeerEntry>();
@@ -351,6 +365,14 @@ export function createBabyBroadcast(
         }
         await publishInto(entry, pc);
       },
+      // Per-parent alert channel (DMY-71): the responder session opens the alert
+      // channel; feed it from the shared source so a single detection fans out a
+      // notification to this parent (and to every other connected parent via
+      // their own channel). The returned cleanup detaches this peer's
+      // subscription when its session tears down (no leak).
+      onAlertChannel: alertSource
+        ? (channel: DataChannel) => pushAlertsToChannel(channel, alertSource)
+        : undefined,
     });
 
     const entry: PeerEntry = {

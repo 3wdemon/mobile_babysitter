@@ -19,6 +19,7 @@ import {
   parseAlert,
   sendAlertOverChannel,
   receiveAlertsFromChannel,
+  pushAlertsToChannel,
 } from '../alertChannel';
 import type { AlertNotificationPresenter } from '../notificationPresenter';
 import type { HapticFeedback } from '../hapticFeedback';
@@ -249,5 +250,64 @@ describe('receiveAlertsFromChannel (AC2/AC3 — parent side)', () => {
     channel.receive(serializeAlert(cryEvent));
     expect(presenter.present).not.toHaveBeenCalled();
     expect(haptic.trigger).not.toHaveBeenCalled();
+  });
+});
+
+describe('pushAlertsToChannel (baby-side source → channel, DMY-71)', () => {
+  /** Minimal in-memory alert source the test drives. */
+  function makeSource(): {
+    source: { subscribe: (h: (e: AlertEvent) => void) => () => void };
+    emit: (e: AlertEvent) => void;
+    subscriberCount: () => number;
+  } {
+    const handlers = new Set<(e: AlertEvent) => void>();
+    return {
+      source: {
+        subscribe(h) {
+          handlers.add(h);
+          return () => handlers.delete(h);
+        },
+      },
+      emit(e) {
+        for (const h of handlers) {
+          h(e);
+        }
+      },
+      subscriberCount: () => handlers.size,
+    };
+  }
+
+  it('sends every raised AlertEvent over the channel (privacy-safe wire)', () => {
+    const channel = new FakeDataChannel();
+    const { source, emit } = makeSource();
+    pushAlertsToChannel(channel, source);
+
+    emit(cryEvent);
+    expect(channel.sent).toEqual([serializeAlert(cryEvent)]);
+    // No media/metric/soundId on the wire.
+    expect(channel.sent[0]).not.toContain('alert-cry');
+  });
+
+  it('unsubscribes from the source when the returned fn is called', () => {
+    const channel = new FakeDataChannel();
+    const { source, emit, subscriberCount } = makeSource();
+    const off = pushAlertsToChannel(channel, source);
+    expect(subscriberCount()).toBe(1);
+
+    off();
+    expect(subscriberCount()).toBe(0);
+    emit(cryEvent);
+    expect(channel.sent).toHaveLength(0);
+  });
+
+  it('is a no-op subscription when the channel is null (unavailable)', () => {
+    const { source, emit, subscriberCount } = makeSource();
+    const off = pushAlertsToChannel(null, source);
+    // Did NOT subscribe to the source — alerts-over-datachannel unavailable.
+    expect(subscriberCount()).toBe(0);
+    expect(() => {
+      emit(cryEvent);
+      off();
+    }).not.toThrow();
   });
 });

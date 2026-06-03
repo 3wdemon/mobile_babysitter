@@ -17,6 +17,13 @@ import {
   type MultiClientSignalingTransport,
 } from '../babyBroadcast';
 import { createLoopbackTransportPair } from '../signalingTransport';
+import {
+  ALERT_CHANNEL_LABEL,
+  serializeAlert,
+} from '../../alerts/alertChannel';
+import type { AlertChannelSource } from '../../alerts/alertChannel';
+import type { AlertEvent } from '../../alerts/alertTypes';
+import type { DataChannel } from '../signalingTypes';
 import type {
   MediaDevicesLike,
   MediaStreamLike,
@@ -77,7 +84,9 @@ class MockPeerConnection implements PeerConnection {
       } as unknown as RtpSenderLike;
     },
   );
-  createDataChannel = jest.fn(() => null);
+  createDataChannel = jest.fn(
+    (_label: string): DataChannel | null => null,
+  );
 
   on<K extends keyof PeerConnectionEvents>(
     event: K,
@@ -470,6 +479,146 @@ describe('createBabyBroadcast — fan-out', () => {
     expect(snapshots).toContain(1);
     expect(snapshots).toContain(2);
     expect(snapshots[snapshots.length - 1]).toBe(1);
+    manager.stop();
+  });
+});
+
+describe('createBabyBroadcast — alert datachannel fan-out (DMY-71)', () => {
+  /** A recording fake alert channel. */
+  class FakeAlertChannel implements DataChannel {
+    readonly label = ALERT_CHANNEL_LABEL;
+    closed = false;
+    readonly sent: string[] = [];
+    send(p: string): boolean {
+      if (this.closed) {
+        return false;
+      }
+      this.sent.push(p);
+      return true;
+    }
+    onMessage(): () => void {
+      return () => {};
+    }
+    onClose(): () => void {
+      return () => {};
+    }
+    isOpen(): boolean {
+      return !this.closed;
+    }
+    close(): void {
+      this.closed = true;
+    }
+  }
+
+  /** A mock pc whose createDataChannel returns a recording fake. */
+  class AlertPc extends MockPeerConnection {
+    readonly alertChannel = new FakeAlertChannel();
+    constructor() {
+      super();
+      this.createDataChannel = jest.fn(
+        (_label: string): DataChannel | null => this.alertChannel,
+      );
+    }
+  }
+
+  function makeSource(): {
+    source: AlertChannelSource;
+    emit: (e: AlertEvent) => void;
+  } {
+    const handlers = new Set<(e: AlertEvent) => void>();
+    return {
+      source: {
+        subscribe(h) {
+          handlers.add(h);
+          return () => handlers.delete(h);
+        },
+      },
+      emit(e) {
+        for (const h of handlers) {
+          h(e);
+        }
+      },
+    };
+  }
+
+  const cry: AlertEvent = {
+    type: 'cry',
+    timestamp: 1_700_000_000_000,
+    soundId: 'alert-cry',
+  };
+
+  it('one raised AlertEvent fans out over EVERY connected parent channel', async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const pcs: AlertPc[] = [];
+    const { source, emit } = makeSource();
+    const broadcast = makeMultiClientTransport();
+
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      alertSource: source,
+      createPeerConnection: () => {
+        const pc = new AlertPc();
+        pcs.push(pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    for (const id of ['p1', 'p2', 'p3']) {
+      const { a } = createLoopbackTransportPair();
+      await manager.addParent(id, a);
+    }
+    await flush();
+
+    expect(pcs).toHaveLength(3);
+    emit(cry);
+    // The same privacy-safe payload reached all three parents.
+    for (const pc of pcs) {
+      expect(pc.alertChannel.sent).toEqual([serializeAlert(cry)]);
+    }
+  });
+
+  it("removing a parent detaches ONLY its channel (others keep receiving)", async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const pcs = new Map<string, AlertPc>();
+    const { source, emit } = makeSource();
+    const broadcast = makeMultiClientTransport();
+    const ids: string[] = [];
+
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      alertSource: source,
+      createPeerConnection: () => {
+        const pc = new AlertPc();
+        // Sessions are created in addParent order; map by insertion.
+        pcs.set(ids[pcs.size], pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    for (const id of ['p1', 'p2']) {
+      ids.push(id);
+      const { a } = createLoopbackTransportPair();
+      await manager.addParent(id, a);
+    }
+    await flush();
+
+    manager.removeParent('p1');
+    const p1 = pcs.get('p1')!;
+    const p2 = pcs.get('p2')!;
+    // p1's channel closed on its teardown; its subscription detached.
+    expect(p1.alertChannel.closed).toBe(true);
+
+    emit(cry);
+    // Only the still-connected parent receives the new alert.
+    expect(p1.alertChannel.sent).toHaveLength(0);
+    expect(p2.alertChannel.sent).toEqual([serializeAlert(cry)]);
+
     manager.stop();
   });
 });
