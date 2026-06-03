@@ -138,4 +138,35 @@ describe('BabyScreen — unified baby publish path (DMY-75)', () => {
     // independent of the connected-parents list. The unified path is lazy.
     expect(captureSpy).not.toHaveBeenCalled();
   });
+
+  it('a SECOND parent reuses the SAME single capture — still exactly one capture (no per-parent getUserMedia)', async () => {
+    const bus = makeBroadcastTransport();
+
+    render(<BabyScreen {...navProps} broadcastTransport={bus.transport} />);
+    await flush();
+
+    // First parent dials in → the shared capture opens once.
+    await act(async () => {
+      const { a } = createLoopbackTransportPair();
+      bus.connect('parent-1', a);
+      for (let i = 0; i < 8; i++) {
+        await Promise.resolve();
+      }
+    });
+    expect(captureSpy).toHaveBeenCalledTimes(1);
+
+    // Second parent dials in over the SAME accept loop. The fan-out shares the
+    // already-open capture across both peer connections — it must NOT open the
+    // camera+mic again. A regressed per-parent publisher would capture twice.
+    await act(async () => {
+      const { a } = createLoopbackTransportPair();
+      bus.connect('parent-2', a);
+      for (let i = 0; i < 8; i++) {
+        await Promise.resolve();
+      }
+    });
+
+    // Two connected parents, still ONE capture total — the SOLE shared publisher.
+    expect(captureSpy).toHaveBeenCalledTimes(1);
+  });
 });
