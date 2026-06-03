@@ -100,6 +100,11 @@
   "webrtc": {
     "iceTimeout": {
       "guidance": "Still trying to connect. Check that both phones are on the same Wi-Fi, then restart the connection."
+    },
+    "reconnect": {
+      "retrying": "Reconnecting… (attempt {{attempt}})",
+      "lost": "Connection lost.",
+      "retry": "Retry"
     }
   },
   "alerts": {

@@ -29,6 +29,14 @@ import {
   type IceTimeout,
   type IceTimeoutOptions,
 } from './iceTimeout';
+import {
+  createReconnectController,
+  type ReconnectController,
+  type ReconnectPolicy,
+  type SetTimer,
+  type ClearTimer,
+  type Rng,
+} from './reconnectPolicy';
 import { createSignalingSession, SignalingSession } from './signalingSession';
 import type { SignalingSessionStatus } from './signalingSession';
 import type {
@@ -84,6 +92,27 @@ export interface UseSignalingOptions {
     /** Override the connect window; defaults to `ICE_CONNECT_TIMEOUT_MS`. */
     readonly timeoutMs?: number;
   };
+  /**
+   * Auto-reconnect with exponential backoff on an UNCLEAN drop (DMY-61).
+   * Default `true`. When the live peer connection reports `disconnected`/`failed`
+   * after having been `connected`, the hook re-runs its connect path on a backoff
+   * schedule up to a cap, then surfaces a permanent failure with a manual
+   * {@link UseSignalingState.retry}. A local {@link UseSignalingState.stop}
+   * suppresses reconnect. Set `false` to disable auto-reconnect entirely.
+   */
+  readonly autoReconnect?: boolean;
+  /** Override the backoff policy (base/cap/maxAttempts/jitter). DMY-61. */
+  readonly reconnectPolicy?: ReconnectPolicy;
+  /**
+   * Injected timer + RNG primitives for the reconnect backoff (DMY-61). Omit in
+   * production (defaults to host `setTimeout`/`clearTimeout`/`Math.random`);
+   * tests pass a fake scheduler + fixed RNG so backoff fires deterministically.
+   */
+  readonly reconnectTimer?: {
+    readonly setTimer?: SetTimer;
+    readonly clearTimer?: ClearTimer;
+    readonly rng?: Rng;
+  };
 }
 
 /** Value returned by {@link useSignaling}. */
@@ -108,6 +137,28 @@ export interface UseSignalingState {
    * `null` otherwise ("check Wi-Fi / restart connection").
    */
   readonly guidanceMessage: string | null;
+  /**
+   * `true` while an auto-reconnect attempt is scheduled / in flight after an
+   * unclean drop (DMY-61). The UI shows a "Reconnecting…" banner while set.
+   */
+  readonly reconnecting: boolean;
+  /**
+   * 1-based number of the reconnect attempt currently in flight (0 when not
+   * reconnecting). Drives the "Reconnecting… (attempt N)" copy.
+   */
+  readonly reconnectAttempt: number;
+  /**
+   * `true` once the backoff exhausted all attempts without reconnecting: the
+   * retry loop has STOPPED (no infinite loop) and the UI offers a manual
+   * {@link UseSignalingState.retry}.
+   */
+  readonly reconnectFailed: boolean;
+  /**
+   * Manually re-attempt the connection after a permanent reconnect failure
+   * (the banner's "Retry" button). Resets the backoff and starts a fresh
+   * attempt; no-op while a session is healthy or a retry is already pending.
+   */
+  readonly retry: () => void;
 }
 
 /** Map the app `role` onto a signalling role. `null`/baby → responder. */
@@ -168,6 +219,9 @@ export function useSignaling(
     onPeerConnection,
     autoStart = true,
     iceTimer,
+    autoReconnect = true,
+    reconnectPolicy,
+    reconnectTimer,
   } = options;
 
   const role = useAppStore(s => s.role);
@@ -177,14 +231,34 @@ export function useSignaling(
   const [status, setStatus] = useState<SignalingSessionStatus>('idle');
   const [isActive, setIsActive] = useState(false);
   const [iceTimedOut, setIceTimedOut] = useState(false);
+  // Reconnect UI state (DMY-61), mirrored from the reconnect controller snapshot.
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [reconnectFailed, setReconnectFailed] = useState(false);
   const sessionRef = useRef<SignalingSession | null>(null);
   // The ICE connect-timeout controller for the live session (DMY-47). Created in
   // `start`, driven by the session status callback, cancelled in `stop`.
   const iceTimeoutRef = useRef<IceTimeout | null>(null);
+  // The reconnect/backoff controller for the live session (DMY-61). Created in
+  // `start`, driven by the session status callback, cancelled in `stop`.
+  const reconnectRef = useRef<ReconnectController | null>(null);
+  // Set while a local stop()/unmount teardown is in progress, so the session's
+  // own `disconnected`/`failed` status update during teardown does NOT trigger a
+  // reconnect. This is the honest clean-vs-unclean boundary at this layer: a
+  // user-initiated stop is suppressed; a remote `bye` is NOT yet distinguishable
+  // from an unclean drop (DMY-45 wires `bye` teardown — until then a remote
+  // hangup will read as `disconnected` and is treated as reconnectable).
+  const tearingDownRef = useRef(false);
   // Track mount so the timeout callback never setState after unmount.
   const mountedRef = useRef(true);
   const iceTimerRef = useRef(iceTimer);
   iceTimerRef.current = iceTimer;
+  const autoReconnectRef = useRef(autoReconnect);
+  autoReconnectRef.current = autoReconnect;
+  const reconnectPolicyRef = useRef(reconnectPolicy);
+  reconnectPolicyRef.current = reconnectPolicy;
+  const reconnectTimerRef = useRef(reconnectTimer);
+  reconnectTimerRef.current = reconnectTimer;
 
   // All volatile inputs are read through refs so the start/stop callbacks and
   // the auto-start effect are STABLE: a re-render caused by a status update (or
@@ -210,48 +284,29 @@ export function useSignaling(
   const peerConfigRef = useRef(peerConfig);
   peerConfigRef.current = peerConfig;
 
-  const stop = useCallback(() => {
-    const session = sessionRef.current;
-    if (session) {
-      session.stop();
-      sessionRef.current = null;
+  // Mirror the reconnect controller snapshot into React state for the UI.
+  const syncReconnectState = useCallback(() => {
+    const ctrl = reconnectRef.current;
+    if (!ctrl || !mountedRef.current) {
+      return;
     }
-    // Cancel any pending ICE timeout so a torn-down session never fires guidance.
-    iceTimeoutRef.current?.cancel();
-    iceTimeoutRef.current = null;
-    setIsActive(false);
-    setStatus('idle');
-    setIceTimedOut(false);
+    const snap = ctrl.snapshot();
+    setReconnecting(snap.reconnecting);
+    setReconnectAttempt(snap.attempt);
+    setReconnectFailed(snap.failedPermanently);
   }, []);
 
-  const start = useCallback(() => {
+  // Create + start a fresh SignalingSession for the CURRENT session id/transport
+  // and wire its status into the store, the ICE timeout and the reconnect
+  // controller. Reused by `start` (first attempt) and by the reconnect
+  // controller's `attemptReconnect` (re-run of the connect path on a backoff
+  // tick). The caller is responsible for having torn down any prior session.
+  const launchSession = useCallback(() => {
     const sessionId = sessionIdRef.current;
     const tx = transportRef.current;
-    // Need a paired session id and a transport to do anything real.
     if (!sessionId || !tx) {
       return;
     }
-    if (sessionRef.current) {
-      return;
-    }
-    // Arm the ICE connect-timeout for this session (DMY-47). It is driven below
-    // by the session status callback (connecting arms; connected/terminal
-    // cancels) and fires guidance once if `connected` never arrives in time.
-    const cfg = iceTimerRef.current;
-    const iceTimeout = createIceTimeout({
-      ...(cfg?.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {}),
-      ...(cfg?.setTimer ? { setTimer: cfg.setTimer } : {}),
-      ...(cfg?.clearTimer ? { clearTimer: cfg.clearTimer } : {}),
-      onTimeout: () => {
-        // Guard against a stale fire after unmount/stop (no setState-after-unmount).
-        if (mountedRef.current && sessionRef.current) {
-          setIceTimedOut(true);
-        }
-      },
-    });
-    iceTimeoutRef.current = iceTimeout;
-    setIceTimedOut(false);
-
     const session = createSignalingSession({
       role: roleToSignalingRole(roleRef.current),
       sessionId,
@@ -261,10 +316,18 @@ export function useSignaling(
       onStatusChange: next => {
         setStatus(next);
         setConnectionStatusRef.current(statusToConnectionStatus(next));
+        const peerState = statusToPeerState(next);
         // Drive the ICE timeout: connecting arms; connected (or a terminal
         // state) cancels — this is what prevents false guidance when the link
         // comes up just before the deadline.
-        iceTimeout.onState(statusToPeerState(next));
+        iceTimeoutRef.current?.onState(peerState);
+        // Drive the reconnect controller from the same REAL status stream
+        // (DMY-61) — UNLESS a local teardown is in progress (stop()/unmount),
+        // which must NOT be read as an unclean drop worth reconnecting.
+        if (!tearingDownRef.current) {
+          reconnectRef.current?.onState(peerState);
+          syncReconnectState();
+        }
         if (next === 'connected') {
           // Clear any guidance the timeout may have surfaced earlier in a churn.
           setIceTimedOut(false);
@@ -281,7 +344,116 @@ export function useSignaling(
     // start() is total (maps any setup failure to `failed` internally); the
     // .catch only keeps the promise from floating for the linter.
     session.start().catch(() => {});
+  }, [syncReconnectState]);
+
+  // Tear down the live session WITHOUT clearing reconnect state — used between
+  // reconnect attempts so the next attempt re-establishes a fresh session. The
+  // `tearingDownRef` guard suppresses the dying session's `disconnected` status
+  // from being mis-read as a new unclean drop.
+  const teardownSession = useCallback(() => {
+    const session = sessionRef.current;
+    if (session) {
+      tearingDownRef.current = true;
+      try {
+        session.stop();
+      } finally {
+        tearingDownRef.current = false;
+      }
+      sessionRef.current = null;
+    }
   }, []);
+
+  const stop = useCallback(() => {
+    // Cancel reconnect FIRST so the session's teardown status updates cannot
+    // schedule a fresh attempt: a local stop is a CLEAN teardown.
+    reconnectRef.current?.cancel();
+    reconnectRef.current = null;
+    teardownSession();
+    // Cancel any pending ICE timeout so a torn-down session never fires guidance.
+    iceTimeoutRef.current?.cancel();
+    iceTimeoutRef.current = null;
+    setIsActive(false);
+    setStatus('idle');
+    setIceTimedOut(false);
+    setReconnecting(false);
+    setReconnectAttempt(0);
+    setReconnectFailed(false);
+  }, [teardownSession]);
+
+  const start = useCallback(() => {
+    const sessionId = sessionIdRef.current;
+    const tx = transportRef.current;
+    // Need a paired session id and a transport to do anything real.
+    if (!sessionId || !tx) {
+      return;
+    }
+    if (sessionRef.current) {
+      return;
+    }
+    // Arm the ICE connect-timeout for this session (DMY-47). It is driven by the
+    // session status callback (connecting arms; connected/terminal cancels) and
+    // fires guidance once if `connected` never arrives in time.
+    const cfg = iceTimerRef.current;
+    const iceTimeout = createIceTimeout({
+      ...(cfg?.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {}),
+      ...(cfg?.setTimer ? { setTimer: cfg.setTimer } : {}),
+      ...(cfg?.clearTimer ? { clearTimer: cfg.clearTimer } : {}),
+      onTimeout: () => {
+        // Guard against a stale fire after unmount/stop (no setState-after-unmount).
+        if (mountedRef.current && sessionRef.current) {
+          setIceTimedOut(true);
+        }
+      },
+    });
+    iceTimeoutRef.current = iceTimeout;
+    setIceTimedOut(false);
+
+    // Build the reconnect/backoff controller for this session lifetime (DMY-61).
+    // It owns ONLY the retry timing: on an unclean drop it tears the dead session
+    // down (no duplicate teardown logic — it calls the same stop+launch path) and
+    // re-runs the connect path on a backoff schedule, up to the attempt cap.
+    if (autoReconnectRef.current) {
+      const rcfg = reconnectTimerRef.current;
+      const pol = reconnectPolicyRef.current;
+      reconnectRef.current = createReconnectController({
+        ...(pol ? { policy: pol } : {}),
+        ...(rcfg?.setTimer ? { setTimer: rcfg.setTimer } : {}),
+        ...(rcfg?.clearTimer ? { clearTimer: rcfg.clearTimer } : {}),
+        ...(rcfg?.rng ? { rng: rcfg.rng } : {}),
+        attemptReconnect: () => {
+          if (!mountedRef.current) {
+            return;
+          }
+          // Re-run the connect path: drop the dead session, launch a fresh one.
+          teardownSession();
+          launchSession();
+          syncReconnectState();
+        },
+        onExhausted: () => {
+          // Max attempts reached: STOP retrying (no infinite loop). Surface the
+          // permanent failure so the UI offers a manual retry.
+          if (mountedRef.current) {
+            syncReconnectState();
+          }
+        },
+      });
+    }
+    setReconnecting(false);
+    setReconnectAttempt(0);
+    setReconnectFailed(false);
+
+    launchSession();
+  }, [launchSession, teardownSession, syncReconnectState]);
+
+  // Manual retry after a permanent reconnect failure (the banner's button).
+  const retry = useCallback(() => {
+    const ctrl = reconnectRef.current;
+    if (!ctrl) {
+      return;
+    }
+    ctrl.retry();
+    syncReconnectState();
+  }, [syncReconnectState]);
 
   // Auto-start when ready; tear down on unmount or when the transport/session
   // identity changes. Keyed only on the significant inputs (NOT on volatile
@@ -308,6 +480,11 @@ export function useSignaling(
       mountedRef.current = false;
       iceTimeoutRef.current?.cancel();
       iceTimeoutRef.current = null;
+      // Cancel any pending reconnect so no backoff timer fires (and no setState
+      // runs) after unmount, even in manual mode where the auto-start effect's
+      // cleanup does not run. Idempotent with `stop`'s own cancel.
+      reconnectRef.current?.cancel();
+      reconnectRef.current = null;
     };
   }, []);
 
@@ -318,5 +495,9 @@ export function useSignaling(
     stop,
     iceTimedOut,
     guidanceMessage: iceTimedOut ? t('webrtc.iceTimeout.guidance') : null,
+    reconnecting,
+    reconnectAttempt,
+    reconnectFailed,
+    retry,
   };
 }

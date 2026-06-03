@@ -45,6 +45,27 @@ export type {
 export { useSignaling } from './useSignaling';
 export type { UseSignalingOptions, UseSignalingState } from './useSignaling';
 
+// --- Reconnect: exponential backoff + UI feedback (DMY-61) --------------------
+// PURE backoff policy + an injectable-clock/RNG controller that paces auto-
+// reconnect on an UNCLEAN drop, up to a hard attempt cap (no infinite loop).
+// Wired into useSignaling; the ReconnectingBanner renders the state.
+export {
+  nextDelayMs,
+  createReconnectController,
+  DEFAULT_RECONNECT_POLICY,
+  RECONNECT_BASE_MS,
+  RECONNECT_MAX_DELAY_MS,
+  RECONNECT_MAX_ATTEMPTS,
+} from './reconnectPolicy';
+export type {
+  ReconnectPolicy,
+  ReconnectController,
+  ReconnectControllerOptions,
+  ReconnectSnapshot,
+  PeerLikeState,
+  Rng,
+} from './reconnectPolicy';
+
 // --- Audio stream: baby→parent over WebRTC, DTLS-SRTP (DMY-18) -----------
 // One-way audio capture/publish (baby) + remote-track playback (parent) on top
 // of the signalling handshake. Microphone capture is real (against the injected
