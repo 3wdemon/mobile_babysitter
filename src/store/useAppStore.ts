@@ -26,7 +26,12 @@ import {
 } from '../features/monetization/freeTierQuota';
 import { mmkvStateStorage } from '../services/storage/mmkv';
 import { DEFAULT_PERSISTED_STATE, parsePersistedState } from './persistSchema';
-import type { AppState, EphemeralState, PersistedState } from './types';
+import type {
+  AppState,
+  EphemeralState,
+  PersistedState,
+  ThemePreference,
+} from './types';
 
 /**
  * Key under which the persisted slice is stored in MMKV.
@@ -222,3 +227,15 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+/**
+ * Selector for the persisted theme preference (DMY-70).
+ *
+ * This is the single seam that feeds `useTheme()` its default mode, so the
+ * preference chosen in Settings (`setTheme`) propagates to every non-hardcoded
+ * screen. Exposed as a dedicated selector (rather than an inline
+ * `useAppStore(s => s.settings.theme)`) so consumers subscribe to ONLY the
+ * theme slice and re-render solely when it changes.
+ */
+export const useThemePreference = (): ThemePreference =>
+  useAppStore(s => s.settings.theme);
