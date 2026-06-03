@@ -231,6 +231,32 @@ export type {
   SignalingEndpoint,
   UseSignalingTransportOptions,
 } from './useSignalingTransport';
+
+// --- Multi-parent broadcast: 1 baby → 2-3 parents (DMY-66) -------------------
+// Baby-side fan-out manager: ONE shared camera+mic capture published into N
+// (cap MAX_PARENTS) independent responder peer connections, one per parent.
+// Per-peer teardown is isolated (one parent dropping never touches the others)
+// and the shared capture is released only when the LAST parent leaves (no leak).
+// The cap rejects further parents gracefully (localised notice). The real
+// multi-client local-network WS SERVER (accept loop + per-client routing) is the
+// device milestone DMY-72; the transport is an injected seam here.
+export { createBabyBroadcast, MAX_PARENTS } from './babyBroadcast';
+export type {
+  BabyBroadcast,
+  BabyBroadcastOptions,
+  BroadcastParent,
+  MultiClientSignalingTransport,
+  AddParentResult,
+  AddParentRejectionReason,
+} from './babyBroadcast';
+export { useBabyBroadcast } from './useBabyBroadcast';
+export type {
+  UseBabyBroadcastOptions,
+  UseBabyBroadcastState,
+} from './useBabyBroadcast';
+export { default as ConnectedParentsList } from './ConnectedParentsList';
+export type { ConnectedParentsListProps } from './ConnectedParentsList';
+
 export type {
   UseVideoStreamOptions,
   UseVideoStreamState,

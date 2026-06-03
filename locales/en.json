@@ -118,6 +118,17 @@
       "indicatorText": "Your voice is going to the baby unit",
       "hintReady": "Hold the button to speak. Echo cancellation keeps it feedback-free.",
       "hintUnavailable": "Talk is available once the connection is up."
+    },
+    "broadcast": {
+      "title": "Connected viewers",
+      "count": "{{count}} of {{max}} connected",
+      "none": "No viewers connected yet.",
+      "statusConnected": "Connected",
+      "statusConnecting": "Connecting…",
+      "statusDisconnected": "Disconnected",
+      "statusFailed": "Connection failed",
+      "viewerA11y": "Viewer {{index}}: {{status}}",
+      "full": "Viewer limit reached ({{max}}). A new phone can connect once one of the current viewers disconnects."
     }
   },
   "alerts": {

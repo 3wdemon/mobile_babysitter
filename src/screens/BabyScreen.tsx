@@ -20,10 +20,25 @@ import OfflineIndicator from '../components/OfflineIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { PowerSaverIndicator, usePowerSaver } from '../features/powersaver';
 import BabyPairingScreen from '../features/pairing/screens/BabyPairingScreen';
+import ConnectedParentsList from '../features/webrtc/ConnectedParentsList';
+import { useBabyBroadcast } from '../features/webrtc/useBabyBroadcast';
+import type { MultiClientSignalingTransport } from '../features/webrtc/babyBroadcast';
 import type { RootStackScreenProps } from '../navigation/types';
 import { useAppStore } from '../store/useAppStore';
 
-function BabyScreen(_props: RootStackScreenProps<'Baby'>) {
+/**
+ * Extra (non-navigation) props for the baby-unit screen. The multi-client
+ * broadcast transport (DMY-66) is INJECTED here: production passes the real
+ * local-network accept loop once it exists (device milestone DMY-72); with none
+ * the fan-out hook stays inert and the viewer list simply shows zero. Tests
+ * inject a fake.
+ */
+export interface BabyScreenProps extends RootStackScreenProps<'Baby'> {
+  /** The multi-client broadcast accept loop (DMY-72 seam). Omit to stay inert. */
+  readonly broadcastTransport?: MultiClientSignalingTransport;
+}
+
+function BabyScreen({ broadcastTransport }: BabyScreenProps) {
   // Night/AOD palette for the baby-unit face (matches the indicator).
   const theme = useTheme('dark');
 
@@ -33,6 +48,13 @@ function BabyScreen(_props: RootStackScreenProps<'Baby'>) {
 
   const { active } = usePowerSaver({ active: sessionActive });
 
+  // Fan-out to multiple parents (DMY-66): the manager shares ONE capture across
+  // up to MAX_PARENTS peer connections. Inert until a real multi-client
+  // transport is injected (DMY-72) — the list then reflects live viewers.
+  const { parents, maxParents, capReached } = useBabyBroadcast(
+    broadcastTransport ? { transport: broadcastTransport } : {},
+  );
+
   return (
     <ScrollView
       style={{ backgroundColor: theme.colors.background }}
@@ -41,7 +63,19 @@ function BabyScreen(_props: RootStackScreenProps<'Baby'>) {
       {/* Top banner; dark palette to match the baby-unit face (DMY-60). */}
       <OfflineIndicator mode="dark" />
       <BabyPairingScreen />
-      <View style={[styles.footer, { padding: theme.spacing.lg, gap: theme.spacing.lg }]}>
+      <View
+        style={[
+          styles.footer,
+          { padding: theme.spacing.lg, gap: theme.spacing.lg },
+        ]}
+      >
+        {/* Connected parents (count + status) for the baby unit (DMY-66). */}
+        <ConnectedParentsList
+          parents={parents}
+          maxParents={maxParents}
+          capReached={capReached}
+          mode="dark"
+        />
         {/* Battery level + low-battery warning for the baby unit (DMY-54). */}
         <BatteryIndicator mode="dark" />
         <PowerSaverIndicator active={active} />
