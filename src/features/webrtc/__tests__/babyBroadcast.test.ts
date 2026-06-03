@@ -621,4 +621,43 @@ describe('createBabyBroadcast — alert datachannel fan-out (DMY-71)', () => {
 
     manager.stop();
   });
+
+  it('manager.stop() closes EVERY parent alert channel and detaches all sources (no leak)', async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const pcs: AlertPc[] = [];
+    const { source, emit } = makeSource();
+    const broadcast = makeMultiClientTransport();
+
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      alertSource: source,
+      createPeerConnection: () => {
+        const pc = new AlertPc();
+        pcs.push(pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    for (const id of ['p1', 'p2', 'p3']) {
+      const { a } = createLoopbackTransportPair();
+      await manager.addParent(id, a);
+    }
+    await flush();
+    expect(pcs).toHaveLength(3);
+
+    manager.stop();
+
+    // Every per-parent alert channel is closed on full teardown.
+    for (const pc of pcs) {
+      expect(pc.alertChannel.closed).toBe(true);
+    }
+    // And every source subscription is detached: a post-stop alert reaches none.
+    emit(cry);
+    for (const pc of pcs) {
+      expect(pc.alertChannel.sent).toHaveLength(0);
+    }
+  });
 });
