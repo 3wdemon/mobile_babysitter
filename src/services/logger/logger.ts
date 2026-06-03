@@ -1,3 +1,4 @@
+import { logBuffer } from './logBuffer';
 import { redact } from './redact';
 import { LOG_LEVEL_WEIGHT, type LogLevel, type RedactOptions } from './types';
 
@@ -48,6 +49,40 @@ function emit(level: LogLevel, args: unknown[], options?: RedactOptions): void {
   } catch {
     // Swallow any console errors — logging must never throw.
   }
+
+  // In-memory ring-buffer sink (DMY-62). We push the ALREADY-REDACTED args, so
+  // the buffer never holds raw SDP / ICE candidates / audio / tokens / PII —
+  // even in memory. Wrapped defensively: the buffer must never break logging.
+  try {
+    logBuffer.push({
+      timestamp: Date.now(),
+      level,
+      message: formatSafeArgs(safeArgs),
+    });
+  } catch {
+    // Buffer is best-effort diagnostics; a failure here is non-fatal.
+  }
+}
+
+/**
+ * Render the already-redacted args into a single, human-readable line for the
+ * buffer / export. Strings are kept verbatim; everything else is JSON-stringified
+ * (objects were already converted to log-safe plain structures by `redact`).
+ * Falls back to `String()` for anything JSON cannot serialise (e.g. BigInt).
+ */
+function formatSafeArgs(safeArgs: unknown[]): string {
+  return safeArgs
+    .map(arg => {
+      if (typeof arg === 'string') {
+        return arg;
+      }
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    })
+    .join(' ');
 }
 
 /**

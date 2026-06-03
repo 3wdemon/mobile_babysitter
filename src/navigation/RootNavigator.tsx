@@ -26,6 +26,7 @@ import PairingScreen from '../screens/PairingScreen';
 import AboutScreen from '../screens/AboutScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import DiagnosticsScreen from '../screens/DiagnosticsScreen';
 import type { RootStackParamList, RootStackScreenProps } from './types';
 
 /**
@@ -131,6 +132,12 @@ function RootNavigator() {
         name="Settings"
         component={SettingsScreen}
         options={{ title: 'Settings' }}
+      />
+      {/* Diagnostics (DMY-62). Reached via the row in Settings. */}
+      <Stack.Screen
+        name="Diagnostics"
+        component={DiagnosticsScreen}
+        options={{ title: 'Diagnostics' }}
       />
     </Stack.Navigator>
   );

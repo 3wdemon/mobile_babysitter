@@ -19,6 +19,7 @@
  *  - Role             -> setRole('baby' | 'parent')
  *  - Re-pair          -> clearPairing() (confirmed) + navigate('Pairing')
  *  - Permissions      -> hosts PermissionReRequest (DMY-57)
+ *  - Diagnostics      -> navigate('Diagnostics') (DMY-62)
  *  - About            -> navigate('About') (DMY-64)
  *
  * Sensitivity sliders: there is no slider dependency in the project and adding a
@@ -475,6 +476,16 @@ function SettingsScreen({ navigation }: RootStackScreenProps<'Settings'>) {
       {/* Permissions (DMY-57): self-contained re-request surface. */}
       <Section title={t('settings.sections.permissions')} theme={theme} />
       <PermissionReRequest />
+
+      {/* Diagnostics (DMY-62) */}
+      <Section title={t('settings.sections.diagnostics')} theme={theme} />
+      <ActionRow
+        testID="settings-diagnostics"
+        label={t('settings.diagnostics.label')}
+        hint={t('settings.diagnostics.hint')}
+        onPress={() => navigation.navigate('Diagnostics')}
+        theme={theme}
+      />
 
       {/* About (DMY-64) */}
       <Section title={t('settings.sections.about')} theme={theme} />
