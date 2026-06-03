@@ -97,6 +97,28 @@
   "network": {
     "offline": "No network connection — the monitor can't reach the other phone."
   },
+  "alerts": {
+    "notification": {
+      "channelName": "Baby monitor alerts",
+      "channelDescription": "Cry and movement alerts from the baby unit.",
+      "cry": {
+        "title": "Crying detected",
+        "body": "The baby unit heard crying."
+      },
+      "motion": {
+        "title": "Movement detected",
+        "body": "The baby unit saw movement."
+      },
+      "noise": {
+        "title": "Noise detected",
+        "body": "The baby unit heard a loud noise."
+      },
+      "no_motion": {
+        "title": "No movement",
+        "body": "No movement for a while on the baby unit."
+      }
+    }
+  },
   "connectionQuality": {
     "levels": {
       "excellent": "Excellent",

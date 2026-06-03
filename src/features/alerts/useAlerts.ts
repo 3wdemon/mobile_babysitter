@@ -22,8 +22,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
+import { logger } from '../../services/logger';
 import { createAlertService } from './alertService';
 import { noopAlertSoundPlayer } from './alertSoundPlayer';
+import { noopNotificationPresenter } from './notificationPresenter';
+import type { AlertNotificationPresenter } from './notificationPresenter';
 import type {
   AlertEvent,
   AlertSoundPlayer,
@@ -54,6 +57,13 @@ export interface UseAlertsOptions {
    * Injected so tests can spy and production can swap in the real engine.
    */
   readonly player?: AlertSoundPlayer;
+  /**
+   * Local-notification sink (DMY-46). Fires IN PARALLEL to the sound for every
+   * RAISED alert, never for dropped/snoozed/throttled ones. Defaults to the
+   * no-op presenter; production passes `createNotifeePresenter()`. Injected so
+   * tests can spy. A throw/rejection here never breaks the sound or pipeline.
+   */
+  readonly presenter?: AlertNotificationPresenter;
   /** Called whenever an alert is actually raised (after throttle/priority). */
   readonly onAlert?: (event: AlertEvent) => void;
   /** When `false`, the source is not subscribed. Defaults to `true`. */
@@ -67,8 +77,13 @@ export interface AlertsState {
 }
 
 export function useAlerts(options: UseAlertsOptions = {}): AlertsState {
-  const { source, player = noopAlertSoundPlayer, onAlert, enabled = true } =
-    options;
+  const {
+    source,
+    player = noopAlertSoundPlayer,
+    presenter = noopNotificationPresenter,
+    onAlert,
+    enabled = true,
+  } = options;
 
   const alertSoundsEnabled = useAppStore(s => s.settings.alertSoundsEnabled);
   const [lastAlert, setLastAlert] = useState<AlertEvent | null>(null);
@@ -80,6 +95,10 @@ export function useAlerts(options: UseAlertsOptions = {}): AlertsState {
 
   const onAlertRef = useRef(onAlert);
   onAlertRef.current = onAlert;
+
+  // Latest presenter in a ref so swapping it does not re-subscribe the source.
+  const presenterRef = useRef(presenter);
+  presenterRef.current = presenter;
 
   // One service per player instance. It reads enablement live via the ref.
   const service = useMemo(
@@ -93,10 +112,31 @@ export function useAlerts(options: UseAlertsOptions = {}): AlertsState {
 
   const handleType = useCallback(
     (type: AlertType) => {
+      // `service.handle` applies ALL policy (enablement / throttle / snooze /
+      // priority) and, for a RAISED event, plays the per-type sound. A non-null
+      // `event` is exactly the "raised" discriminant — dropped/snoozed/throttled
+      // events return `{ event: null }` and never reach the body below.
       const { event } = service.handle(type);
       if (event) {
         setLastAlert(event);
         onAlertRef.current?.(event);
+        // SECOND SINK (DMY-46): post a local notification IN PARALLEL to the
+        // sound, for raised events ONLY. Isolated so a sync throw OR an async
+        // rejection from the presenter can never break the sound or pipeline.
+        try {
+          const result = presenterRef.current.present(event);
+          if (result && typeof result.then === 'function') {
+            result.then(undefined, () => {
+              logger.warn('alert: notification present rejected', {
+                type: event.type,
+              });
+            });
+          }
+        } catch {
+          logger.warn('alert: notification present threw', {
+            type: event.type,
+          });
+        }
       }
     },
     [service],
