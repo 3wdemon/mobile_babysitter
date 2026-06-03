@@ -252,6 +252,58 @@ describe('ParentPairingScreen', () => {
     }
   });
 
+  it('localizes the invalid-code reject banner under ru (DMY-73)', async () => {
+    // Guards the REJECT_KEYS -> t() indirection: a typo in the key map would
+    // render i18n-js's "[missing ...]" marker instead of the ru copy. The
+    // English-regex tests above would not catch a ru-only key drift; this does.
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('camera-permission-action'));
+      });
+
+      act(() => {
+        __emitScan('https://example.com/not-our-qr');
+      });
+
+      expect(
+        screen.getByText(ru.pairing.parent.reject.invalidTitle),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.reject.invalidBody),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
+  });
+
+  it('localizes the expired-code reject banner under ru (DMY-73)', async () => {
+    const stale = serializePairingPayload(
+      createPairingPayload(undefined, Date.now() - PAIRING_PAYLOAD_TTL_MS - 5000),
+    );
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('camera-permission-action'));
+      });
+
+      act(() => {
+        __emitScan(stale);
+      });
+
+      expect(
+        screen.getByText(ru.pairing.parent.reject.staleTitle),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.reject.staleBody),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
+  });
+
   it('styles the permission gate button from design tokens', () => {
     render(<ParentPairingScreen />);
     const action = screen.getByTestId('camera-permission-action');
