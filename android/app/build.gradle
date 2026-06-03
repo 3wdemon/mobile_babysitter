@@ -111,6 +111,11 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // Java-WebSocket (DMY-72): a small, mature pure-JVM WebSocket SERVER. RN ships
+    // a WS *client* only, so the baby-unit's signalling LISTEN side needs this for
+    // SignalingServerModule.kt (the iOS side rolls RFC 6455 by hand on NWListener).
+    implementation("org.java-websocket:Java-WebSocket:1.5.6")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

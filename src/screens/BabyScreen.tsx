@@ -13,6 +13,7 @@
  * monitor is considered engaged and power-saver applies (subject to the user
  * setting). The status-only indicator/toggle is shown below the pairing view.
  */
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import BatteryIndicator from '../components/BatteryIndicator';
@@ -23,6 +24,7 @@ import BabyPairingScreen from '../features/pairing/screens/BabyPairingScreen';
 import ConnectedParentsList from '../features/webrtc/ConnectedParentsList';
 import { useBabyBroadcast } from '../features/webrtc/useBabyBroadcast';
 import type { MultiClientSignalingTransport } from '../features/webrtc/babyBroadcast';
+import { createNativeBroadcastTransport } from '../features/webrtc/signalingServerNative';
 import type { RootStackScreenProps } from '../navigation/types';
 import { useAppStore } from '../store/useAppStore';
 
@@ -45,14 +47,29 @@ function BabyScreen({ broadcastTransport }: BabyScreenProps) {
   // Honest "active session" flag: engaged the moment we leave `idle`. Swap this
   // for the real live-media state when WebRTC lands (DMY-16/18).
   const sessionActive = useAppStore(s => s.connectionStatus !== 'idle');
+  const pairedSessionId = useAppStore(s => s.pairedSessionId);
 
   const { active } = usePowerSaver({ active: sessionActive });
 
   // Fan-out to multiple parents (DMY-66): the manager shares ONE capture across
-  // up to MAX_PARENTS peer connections. Inert until a real multi-client
-  // transport is injected (DMY-72) — the list then reflects live viewers.
+  // up to MAX_PARENTS peer connections. The multi-client accept loop is now the
+  // REAL native WebSocket SERVER (DMY-72): once paired, we build a native
+  // listener that validates the shared secret (the ephemeral sessionId from the
+  // QR payload, DMY-6) on each parent's upgrade. An explicitly injected
+  // `broadcastTransport` (tests / future flavours) takes precedence; on a build
+  // where the native module is absent (Jest) the factory returns `undefined` and
+  // the hook stays inert — the list simply shows zero, exactly as before.
+  const nativeTransport = useMemo<MultiClientSignalingTransport | undefined>(
+    () =>
+      broadcastTransport ??
+      (pairedSessionId
+        ? createNativeBroadcastTransport({ sessionId: pairedSessionId })
+        : undefined),
+    [broadcastTransport, pairedSessionId],
+  );
+
   const { parents, maxParents, capReached } = useBabyBroadcast(
-    broadcastTransport ? { transport: broadcastTransport } : {},
+    nativeTransport ? { transport: nativeTransport } : {},
   );
 
   return (
