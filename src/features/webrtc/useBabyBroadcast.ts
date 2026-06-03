@@ -43,8 +43,6 @@ export interface UseBabyBroadcastOptions {
   readonly createPeerConnection?: PeerConnectionFactory;
   /** ICE configuration forwarded to every peer connection. */
   readonly peerConfig?: PeerConnectionConfig;
-  /** Whether the baby starts transmitting video. Defaults to `true`. */
-  readonly videoEnabled?: boolean;
   /** Override the parent cap (mainly for tests). */
   readonly maxParents?: number;
 }
@@ -58,8 +56,8 @@ export interface UseBabyBroadcastState {
   /** The cap (for "N / MAX" copy). */
   readonly maxParents: number;
   /**
-   * `true` once a parent was rejected because the cap was reached, until the
-   * next successful connect frees the notice. Drives the localised "monitor
+   * `true` while the tracked parents are at the cap; clears the instant the
+   * list drops below it (e.g. a parent leaves). Drives the localised "monitor
    * full" message on the screen (AC #3).
    */
   readonly capReached: boolean;
@@ -75,7 +73,6 @@ export function useBabyBroadcast(
     mediaDevices,
     createPeerConnection,
     peerConfig,
-    videoEnabled = true,
     maxParents = MAX_PARENTS,
   } = options;
 
@@ -97,8 +94,6 @@ export function useBabyBroadcast(
   createPcRef.current = createPeerConnection;
   const peerConfigRef = useRef(peerConfig);
   peerConfigRef.current = peerConfig;
-  const videoEnabledRef = useRef(videoEnabled);
-  videoEnabledRef.current = videoEnabled;
   const maxParentsRef = useRef(maxParents);
   maxParentsRef.current = maxParents;
 
@@ -131,7 +126,6 @@ export function useBabyBroadcast(
         ? { createPeerConnection: createPcRef.current }
         : {}),
       ...(peerConfigRef.current ? { peerConfig: peerConfigRef.current } : {}),
-      videoEnabled: videoEnabledRef.current,
       maxParents: maxParentsRef.current,
       onParentsChange: sync,
     });

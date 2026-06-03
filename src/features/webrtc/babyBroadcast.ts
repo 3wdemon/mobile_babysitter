@@ -141,8 +141,6 @@ export interface BabyBroadcastOptions {
   readonly createPeerConnection?: PeerConnectionFactory;
   /** ICE configuration forwarded to every peer connection. */
   readonly peerConfig?: PeerConnectionConfig;
-  /** Whether the baby starts transmitting video. Defaults to `true`. */
-  readonly videoEnabled?: boolean;
   /**
    * Override the parent cap (MVP default {@link MAX_PARENTS}). Mainly for tests;
    * production keeps the default.
@@ -201,7 +199,6 @@ export function createBabyBroadcast(
     mediaDevices,
     createPeerConnection,
     peerConfig,
-    videoEnabled = true,
     maxParents = MAX_PARENTS,
     onParentsChange,
   } = options;
@@ -288,16 +285,10 @@ export function createBabyBroadcast(
         // Each peer starts at the top of the ladder; per-peer adaptive bitrate
         // (DMY-17) can step ITS OWN encoding down without touching the others.
         await setVideoBitrate(sender, VIDEO_QUALITY_LADDER[0]).catch(() => {});
-        if (!videoEnabled) {
-          // Pause this peer's outgoing video at the source track. Since the
-          // capture is SHARED, disabling the track would affect all peers, so we
-          // leave the track enabled and rely on per-sender control elsewhere; we
-          // only honour videoEnabled=false by not stepping the bitrate up. This
-          // matches the 1:1 hook's contract while keeping peers independent.
-          logger.debug(
-            'webrtc/broadcast: video disabled for new peer (shared capture)',
-          );
-        }
+        // Per-peer video pause is NOT done here: every parent shares one capture
+        // stream, so toggling a single source track would affect all peers.
+        // Pausing an individual peer's outgoing video is the VideoTrackController's
+        // job (DMY-17), acting on that peer's sender — not on the shared source.
       }
     }
   }
