@@ -170,6 +170,54 @@ export interface PeerConnectionEvents {
   icecandidate: (candidate: SignalingIceCandidate | null) => void;
   connectionstatechange: (state: PeerConnectionState) => void;
   track: (event: unknown) => void;
+  /**
+   * A remote {@link DataChannel} was opened by the peer (DMY-50). The responder
+   * (baby) creates the channel before negotiation; the initiator (parent)
+   * receives THIS event when the channel surfaces and uses it to receive alerts.
+   * Handed the ready-to-use {@link DataChannel} wrapper.
+   */
+  datachannel: (channel: DataChannel) => void;
+}
+
+/**
+ * A minimal, testable wrapper over the native `RTCDataChannel` (DMY-50).
+ *
+ * The baby-unit opens ONE reliable, ordered data channel on the existing
+ * PeerConnection and uses it to push privacy-safe alert events to the parent
+ * IN-SESSION — a $0, server-free alternative to APNS/FCM push (DMY-9). The
+ * channel carries ONLY small JSON control messages (`{type,timestamp}`); never
+ * audio, frames, or any media — that stays on the SRTP media tracks.
+ *
+ * Honest boundary (vs push): this works only while BOTH apps are live and the
+ * PeerConnection is up. A fully evicted/suspended app has no live channel — the
+ * data channel is DEAD then. That is by design for the MVP; true wake-from-
+ * background delivery would require push (DMY-9) and is out of scope here.
+ *
+ * The wrapper exposes only `send` / `onMessage` / `onClose` / `readyState` /
+ * `close`, normalises the inbound payload to a string, and isolates throwing
+ * subscribers — mirroring the {@link PeerConnection} wrapper.
+ */
+export interface DataChannel {
+  /**
+   * The channel's negotiated label. A label lets both ends agree on the
+   * channel's purpose (e.g. the alert channel) without inspecting payloads.
+   */
+  readonly label: string;
+  /**
+   * Send a string payload to the peer. MUST NOT throw for a transient/closed
+   * channel — a send on a not-yet-open or closed channel is dropped (logged),
+   * never thrown, so the alert pipeline can never crash on a flaky channel.
+   * Returns whether the payload was handed to the channel.
+   */
+  send(payload: string): boolean;
+  /** Subscribe to inbound string messages. Returns an unsubscribe function. */
+  onMessage(handler: (payload: string) => void): () => void;
+  /** Subscribe to the channel closing. Returns an unsubscribe function. */
+  onClose(handler: () => void): () => void;
+  /** Whether the channel is currently open (ready to send). */
+  isOpen(): boolean;
+  /** Close the channel and release resources. Idempotent. */
+  close(): void;
 }
 
 /**
@@ -218,6 +266,15 @@ export interface PeerConnection {
     track: MediaStreamTrackLike,
     stream: MediaStreamLike,
   ): RtpSenderLike | null;
+  /**
+   * Open a {@link DataChannel} on this connection (DMY-50). Called by the
+   * RESPONDER (baby) BEFORE the answer is created so the channel's m-line is
+   * part of the negotiation; the initiator (parent) then receives it via the
+   * `datachannel` event. Returns the wrapper, or `null` if the underlying
+   * connection does not support data channels (a minimal mock) — callers treat
+   * a `null` as "alerts-over-datachannel unavailable" and degrade gracefully.
+   */
+  createDataChannel(label: string): DataChannel | null;
   /** Subscribe to a wrapper event. Returns an unsubscribe function. */
   on<K extends keyof PeerConnectionEvents>(
     event: K,

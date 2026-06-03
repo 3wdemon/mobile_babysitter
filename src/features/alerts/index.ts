@@ -58,6 +58,18 @@ export {
 } from './hapticFeedback';
 export type { HapticFeedback } from './hapticFeedback';
 
+export {
+  ALERT_CHANNEL_LABEL,
+  serializeAlert,
+  parseAlert,
+  sendAlertOverChannel,
+  receiveAlertsFromChannel,
+} from './alertChannel';
+export type {
+  AlertChannelMessage,
+  AlertChannelReceiverOptions,
+} from './alertChannel';
+
 export { default as LastAlertIndicator } from './LastAlertIndicator';
 export type { LastAlertIndicatorProps } from './LastAlertIndicator';
 

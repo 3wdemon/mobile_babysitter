@@ -32,6 +32,7 @@ class MockPeerConnection implements PeerConnection {
     icecandidate: new Set(),
     connectionstatechange: new Set(),
     track: new Set(),
+    datachannel: new Set(),
   };
   createOffer = jest.fn(
     async (): Promise<SignalingSdp> => ({ type: 'offer', sdp: 'o' }),
@@ -45,6 +46,7 @@ class MockPeerConnection implements PeerConnection {
   addIceCandidate = jest.fn(async (_c: SignalingIceCandidate) => {});
   addAudioTrack = jest.fn();
   addVideoTrack = jest.fn(() => null);
+  createDataChannel = jest.fn(() => null);
   on<K extends keyof PeerConnectionEvents>(
     event: K,
     handler: PeerConnectionEvents[K],

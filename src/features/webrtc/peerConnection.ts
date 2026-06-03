@@ -44,6 +44,7 @@ import type {
   RtpSenderLike,
 } from './mediaTypes';
 import type {
+  DataChannel,
   PeerConnection,
   PeerConnectionConfig,
   PeerConnectionEvents,
@@ -85,6 +86,12 @@ export interface RtcPeerConnectionLike {
    * mock that does not exercise the media path need not implement it.
    */
   addTrack?(track: unknown, stream: unknown): unknown;
+  /**
+   * Open a native data channel (DMY-50). Present on react-native-webrtc's
+   * `RTCPeerConnection`; optional here so a minimal mock that does not exercise
+   * the alert channel need not implement it.
+   */
+  createDataChannel?(label: string, options?: unknown): RtcDataChannelLike;
   close(): void;
   connectionState?: string;
   // Event handler slots (assigned, not addEventListener, to match RN-WebRTC).
@@ -94,7 +101,28 @@ export interface RtcPeerConnectionLike {
   onconnectionstatechange: ((event?: unknown) => void) | null;
   oniceconnectionstatechange?: ((event?: unknown) => void) | null;
   ontrack: ((event: unknown) => void) | null;
+  /**
+   * Fired when the PEER opens a data channel (DMY-50). The initiator (parent)
+   * uses this to receive the alert channel the responder (baby) created.
+   */
+  ondatachannel?: ((event: { channel: RtcDataChannelLike }) => void) | null;
   iceConnectionState?: string;
+}
+
+/**
+ * Minimal structural type of the native `RTCDataChannel` (DMY-50). We touch
+ * only `label`, `send`, `close`, `readyState` and the `onopen`/`onmessage`/
+ * `onclose` handler slots (assigned, not addEventListener, to match RN-WebRTC).
+ */
+export interface RtcDataChannelLike {
+  readonly label?: string;
+  readyState?: string;
+  send(data: string): void;
+  close(): void;
+  onopen?: ((event?: unknown) => void) | null;
+  onmessage?: ((event: { data?: unknown }) => void) | null;
+  onclose?: ((event?: unknown) => void) | null;
+  onerror?: ((event?: unknown) => void) | null;
 }
 
 /** Constructor signature for the (native or mock) peer connection. */
@@ -149,6 +177,98 @@ export function normalizePeerState(
 }
 
 /**
+ * Wrap a native {@link RtcDataChannelLike} as our {@link DataChannel} (DMY-50).
+ *
+ * Exposes a small pub/sub over the native single-slot `onmessage`/`onclose`
+ * handlers, normalises the inbound payload to a string, and isolates throwing
+ * subscribers — mirroring the PeerConnection wrapper. `send` NEVER throws: a
+ * send on a not-yet-open or closed channel is dropped with a coarse log, so the
+ * alert pipeline cannot crash on a flaky channel. No payload is ever logged.
+ */
+export function wrapDataChannel(dc: RtcDataChannelLike): DataChannel {
+  const label = dc.label ?? '';
+  const messageHandlers = new Set<(payload: string) => void>();
+  const closeHandlers = new Set<() => void>();
+  let closed = false;
+
+  dc.onmessage = event => {
+    const data = event?.data;
+    // The native channel may hand us a string or (for binary mode) something
+    // else; we only carry small JSON control strings, so coerce non-strings to
+    // a string and let the parser reject anything malformed downstream.
+    const payload = typeof data === 'string' ? data : String(data ?? '');
+    for (const h of messageHandlers) {
+      try {
+        h(payload);
+      } catch {
+        // Isolate a misbehaving subscriber.
+      }
+    }
+  };
+
+  dc.onclose = () => {
+    for (const h of closeHandlers) {
+      try {
+        h();
+      } catch {
+        // Isolate a misbehaving subscriber.
+      }
+    }
+  };
+
+  return {
+    label,
+    send(payload: string): boolean {
+      if (closed || dc.readyState !== 'open') {
+        // Not throwing keeps a flaky channel from crashing the alert pipeline.
+        logger.debug('datachannel: send skipped (not open)', {
+          state: dc.readyState ?? 'unknown',
+        });
+        return false;
+      }
+      try {
+        dc.send(payload);
+        return true;
+      } catch {
+        logger.warn('datachannel: send failed');
+        return false;
+      }
+    },
+    onMessage(handler: (payload: string) => void): () => void {
+      messageHandlers.add(handler);
+      return () => {
+        messageHandlers.delete(handler);
+      };
+    },
+    onClose(handler: () => void): () => void {
+      closeHandlers.add(handler);
+      return () => {
+        closeHandlers.delete(handler);
+      };
+    },
+    isOpen(): boolean {
+      return !closed && dc.readyState === 'open';
+    },
+    close(): void {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      dc.onmessage = null;
+      dc.onclose = null;
+      messageHandlers.clear();
+      closeHandlers.clear();
+      try {
+        dc.close();
+      } catch {
+        logger.warn('datachannel: error closing channel');
+      }
+      logger.info('datachannel: closed');
+    },
+  };
+}
+
+/**
  * Build a {@link PeerConnection} over a native (or mock) `RTCPeerConnection`.
  *
  * @param config  ICE configuration. Defaults to {@link DEFAULT_ICE_SERVERS}.
@@ -176,6 +296,7 @@ export function createPeerConnection(
     icecandidate: new Set(),
     connectionstatechange: new Set(),
     track: new Set(),
+    datachannel: new Set(),
   };
 
   let remoteDescriptionSet = false;
@@ -220,6 +341,26 @@ export function createPeerConnection(
     for (const h of handlers.track) {
       try {
         h(event);
+      } catch {
+        // Isolate a misbehaving subscriber.
+      }
+    }
+  };
+
+  // The peer (baby/responder) opened a data channel: wrap it and notify the
+  // initiator (parent) so it can receive alerts over it (DMY-50).
+  pc.ondatachannel = event => {
+    const native = event?.channel;
+    if (!native) {
+      return;
+    }
+    const channel = wrapDataChannel(native);
+    logger.info('datachannel: remote channel received', {
+      label: channel.label,
+    });
+    for (const h of handlers.datachannel) {
+      try {
+        h(channel);
       } catch {
         // Isolate a misbehaving subscriber.
       }
@@ -289,6 +430,31 @@ export function createPeerConnection(
       }
     },
 
+    createDataChannel(channelLabel: string): DataChannel | null {
+      if (typeof pc.createDataChannel !== 'function') {
+        // Minimal connection without data-channel support: alerts-over-
+        // datachannel are unavailable; callers degrade gracefully.
+        logger.warn(
+          'datachannel: createDataChannel unsupported; alert channel unavailable',
+        );
+        return null;
+      }
+      try {
+        // Reliable + ordered (the defaults) — an alert must not be lost or
+        // reordered. The channel carries only tiny JSON control messages.
+        const native = pc.createDataChannel(channelLabel, {
+          ordered: true,
+        });
+        logger.info('datachannel: local channel created', {
+          label: channelLabel,
+        });
+        return wrapDataChannel(native);
+      } catch {
+        logger.warn('datachannel: failed to create channel');
+        return null;
+      }
+    },
+
     async setRemoteDescription(description: SignalingSdp): Promise<void> {
       await pc.setRemoteDescription({
         type: description.type,
@@ -337,9 +503,11 @@ export function createPeerConnection(
       pc.onconnectionstatechange = null;
       pc.oniceconnectionstatechange = null;
       pc.ontrack = null;
+      pc.ondatachannel = null;
       handlers.icecandidate.clear();
       handlers.connectionstatechange.clear();
       handlers.track.clear();
+      handlers.datachannel.clear();
       try {
         pc.close();
       } catch {
