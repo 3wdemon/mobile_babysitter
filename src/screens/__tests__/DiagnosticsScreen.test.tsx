@@ -176,6 +176,53 @@ describe('DiagnosticsScreen export', () => {
     expect(message).not.toContain('topsecret');
     expect(message).toContain(REDACTED);
   });
+
+  // DMY-62 hardening: even if a raw SDP / ICE string slipped into the buffer
+  // WITHOUT a sensitive key (the bare-arg leak path), the export's re-redaction
+  // must mask the SDP/ICE attribute-line forms before the text leaves the
+  // device. This is the export-side mirror of the logger-sink regression.
+  it('masks bare SDP / ICE attribute lines in the exported text', async () => {
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValue({ action: 'sharedAction' } as never);
+
+    act(() => {
+      logBuffer.push(
+        entry(
+          'error',
+          'offer v=0\r\na=candidate:1 1 udp 1 192.168.1.5 54321 typ srflx\r\na=ice-pwd:supersecretpwd',
+          1000,
+        ),
+      );
+    });
+
+    renderDiagnostics();
+    fireEvent.press(await screen.findByTestId('diagnostics-export'));
+
+    await waitFor(() => expect(shareSpy).toHaveBeenCalledTimes(1));
+    const { message } = shareSpy.mock.calls[0][0] as { message: string };
+
+    expect(message).not.toContain('192.168.1.5');
+    expect(message).not.toContain('54321');
+    expect(message).not.toContain('srflx');
+    expect(message).not.toContain('supersecretpwd');
+    expect(message).toContain(REDACTED);
+  });
+
+  it('exports an empty buffer without crashing (empty message)', async () => {
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValue({ action: 'sharedAction' } as never);
+
+    // Buffer is cleared in beforeEach; export with no entries.
+    renderDiagnostics();
+    expect(await screen.findByTestId('diagnostics-empty')).toBeOnTheScreen();
+    fireEvent.press(screen.getByTestId('diagnostics-export'));
+
+    await waitFor(() => expect(shareSpy).toHaveBeenCalledTimes(1));
+    const { message } = shareSpy.mock.calls[0][0] as { message: string };
+    expect(message).toBe('');
+  });
 });
 
 describe('buildExportText (pure)', () => {
@@ -195,6 +242,37 @@ describe('buildExportText (pure)', () => {
       entry('info', 'b', 2000),
     ]);
     expect(text.split('\n')).toHaveLength(2);
+  });
+
+  it('returns an empty string for an empty buffer', () => {
+    expect(buildExportText([])).toBe('');
+  });
+
+  it('does not crash on a multiline / control-char message', () => {
+    // Embedded newlines, tab and a NUL should not throw and should survive as
+    // text (the per-entry prefix stays intact, secrets in the line still mask).
+    const weird = 'line1\nline2\ttabbed nul token=zzz';
+    const text = buildExportText([entry('error', weird, 1000)]);
+    expect(text).toContain('[ERROR]');
+    expect(text).toContain('line2');
+    expect(text).toContain(REDACTED);
+    expect(text).not.toContain('token=zzz');
+  });
+
+  it('handles a very long message without truncation or throw', () => {
+    const long = 'x'.repeat(200_000);
+    const text = buildExportText([entry('info', long, 1000)]);
+    expect(text).toContain(long);
+    expect(text.length).toBeGreaterThan(200_000);
+  });
+
+  it('renders entries whose message came from an undefined context arg', () => {
+    // logger formats `undefined` context to the string 'undefined'; the buffer
+    // never stores a non-string message, so the export must still produce a
+    // clean line.
+    const text = buildExportText([entry('debug', 'ctx undefined', 1000)]);
+    expect(text).toContain('[DEBUG]');
+    expect(text).toContain('ctx undefined');
   });
 });
 

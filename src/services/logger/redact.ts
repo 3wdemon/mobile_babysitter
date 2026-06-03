@@ -139,6 +139,14 @@ function matchesWordToken(key: string, word: string): boolean {
  *   - `(token|password|secret|key|...)=<value>` pairs as found in query
  *     strings / form bodies -> `<name>=[REDACTED]`. The value runs up to the
  *     next `&`, whitespace, `#` or `;`.
+ *   - WebRTC SDP / ICE attribute-line forms that key-based redaction misses
+ *     when a raw signalling string is logged WITHOUT a `sdp`/`candidate` key
+ *     (e.g. `logger.error('offer', rawSdpString)`). These carry local/remote
+ *     IPs, ports and ICE credentials and must never leave the device via the
+ *     diagnostics export (DMY-62):
+ *       - an ICE `candidate:<...>` line (with or without an `a=` prefix),
+ *       - the `a=fingerprint:`, `a=ice-ufrag:`, `a=ice-pwd:` credential lines.
+ *     The value runs to end-of-line (SDP lines are CRLF-delimited).
  *
  * Anything more (entropy heuristics, JWT shape detection, etc.) is out of
  * scope — see the module/`redact` JSDoc.
@@ -153,9 +161,26 @@ const KV_RE = new RegExp(
   'gi',
 );
 
+/**
+ * ICE candidate line: `candidate:<rest>` optionally preceded by an `a=` SDP
+ * attribute prefix. The body (priority/IP/port/typ/raddr/rport) runs to the end
+ * of the line. Distinct from the `candidate=` KV form (query/form bodies).
+ */
+const ICE_CANDIDATE_RE = /\bcandidate:[^\r\n]+/gi;
+
+/**
+ * SDP credential attribute lines that expose ICE ufrag/pwd or the DTLS
+ * fingerprint. Value runs to end-of-line. The attribute name is preserved so
+ * the line shape stays legible; only the secret value is masked.
+ */
+const SDP_CRED_RE =
+  /\b(a=(?:ice-ufrag|ice-pwd|fingerprint):)[^\r\n]+/gi;
+
 export function redactString(text: string, placeholder: string): string {
   let out = text.replace(BEARER_RE, (_m, prefix: string) => `${prefix}${placeholder}`);
   out = out.replace(KV_RE, (_m, name: string, eq: string) => `${name}${eq}${placeholder}`);
+  out = out.replace(SDP_CRED_RE, (_m, prefix: string) => `${prefix}${placeholder}`);
+  out = out.replace(ICE_CANDIDATE_RE, () => `candidate:${placeholder}`);
   return out;
 }
 

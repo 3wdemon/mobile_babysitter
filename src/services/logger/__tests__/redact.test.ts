@@ -438,6 +438,75 @@ describe('redact', () => {
     it('leaves innocuous strings untouched', () => {
       expect(redact('the keyboard is fine')).toBe('the keyboard is fine');
     });
+
+    // DMY-62 hardening: SDP / ICE attribute-line forms that key-based redaction
+    // misses when a raw signalling string is logged WITHOUT an sdp/candidate
+    // key (e.g. `logger.error('offer', rawSdpString)`). These leak local/remote
+    // IPs, ports and ICE credentials off-device via the diagnostics export.
+    describe('SDP / ICE attribute-line forms (DMY-62)', () => {
+      it('masks a bare `candidate:` line (no a= prefix, no name=value form)', () => {
+        const result = redact(
+          'candidate:842163049 1 udp 1677729535 192.168.1.5 54321 typ srflx raddr 0.0.0.0 rport 0',
+        ) as string;
+        expect(result).toContain(`candidate:${REDACTED}`);
+        expect(result).not.toContain('192.168.1.5');
+        expect(result).not.toContain('54321');
+        expect(result).not.toContain('srflx');
+      });
+
+      it('masks an `a=candidate:` SDP attribute line', () => {
+        const result = redact(
+          'a=candidate:1 1 UDP 2130706431 10.0.0.5 9 typ host',
+        ) as string;
+        expect(result).toContain(`candidate:${REDACTED}`);
+        expect(result).not.toContain('10.0.0.5');
+        expect(result).not.toContain('typ host');
+      });
+
+      it('masks the bare candidate line embedded mid-string and stops at the newline', () => {
+        const result = redact(
+          'ice event candidate:abc 192.168.0.9 typ host\r\nnext=ok',
+        ) as string;
+        expect(result).not.toContain('192.168.0.9');
+        expect(result).toContain(`candidate:${REDACTED}`);
+        // Following line is preserved (line-bounded redaction).
+        expect(result).toContain('next=ok');
+      });
+
+      it('masks ice-ufrag / ice-pwd / fingerprint credential lines, keeping the attr name', () => {
+        const sdp =
+          'a=ice-ufrag:F7gI\r\na=ice-pwd:x9Hf+ASjkdfHJKLqweOIU\r\na=fingerprint:sha-256 AB:CD:EF:01';
+        const result = redact(sdp) as string;
+        expect(result).toContain(`a=ice-ufrag:${REDACTED}`);
+        expect(result).toContain(`a=ice-pwd:${REDACTED}`);
+        expect(result).toContain(`a=fingerprint:${REDACTED}`);
+        expect(result).not.toContain('F7gI');
+        expect(result).not.toContain('x9Hf+ASjkdfHJKLqweOIU');
+        expect(result).not.toContain('AB:CD:EF:01');
+      });
+
+      it('masks a candidate line nested in an object string value', () => {
+        const result = redact({
+          event: 'icecandidate',
+          line: 'candidate:1 1 udp 1 203.0.113.7 60000 typ srflx',
+        }) as Record<string, unknown>;
+        expect(result.event).toBe('icecandidate');
+        expect(result.line).toContain(`candidate:${REDACTED}`);
+        expect(result.line).not.toContain('203.0.113.7');
+      });
+
+      it('does NOT over-redact benign attribute-style diagnostics', () => {
+        // `level=info`, `codec=h264` etc. must remain visible; the SDP/ICE
+        // passes only target `candidate:` and the credential attr lines.
+        const benign = 'level=info width=1280 height=720 fps=30 codec=h264';
+        expect(redact(benign)).toBe(benign);
+        // Non-credential SDP lines (m=, o= without ufrag/pwd/fingerprint) are
+        // not targeted by these patterns and must pass through unchanged.
+        expect(redact('a=rtpmap:111 opus/48000/2')).toBe(
+          'a=rtpmap:111 opus/48000/2',
+        );
+      });
+    });
   });
 
   describe('Error objects (M2)', () => {

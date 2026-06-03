@@ -36,6 +36,28 @@ describe('LogBuffer', () => {
     expect(buf.getEntries().map(e => e.message)).toEqual(['m6', 'm5', 'm4']);
   });
 
+  it('retains all entries when exactly at capacity (boundary, no eviction)', () => {
+    const buf = new LogBuffer(3);
+    buf.push(entry('m1', 1));
+    buf.push(entry('m2', 2));
+    buf.push(entry('m3', 3));
+    // Exactly at cap: nothing evicted yet.
+    expect(buf.size()).toBe(3);
+    expect(buf.getEntries().map(e => e.message)).toEqual(['m3', 'm2', 'm1']);
+    // One past cap: only the very oldest is dropped.
+    buf.push(entry('m4', 4));
+    expect(buf.size()).toBe(3);
+    expect(buf.getEntries().map(e => e.message)).toEqual(['m4', 'm3', 'm2']);
+  });
+
+  it('supports a capacity of exactly 1 (ring of one)', () => {
+    const buf = new LogBuffer(1);
+    buf.push(entry('a', 1));
+    buf.push(entry('b', 2));
+    expect(buf.size()).toBe(1);
+    expect(buf.getEntries().map(e => e.message)).toEqual(['b']);
+  });
+
   it('keeps memory bounded under heavy churn', () => {
     const buf = new LogBuffer(50);
     for (let i = 0; i < 100_000; i++) {
