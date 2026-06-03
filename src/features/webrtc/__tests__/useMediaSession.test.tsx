@@ -16,6 +16,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 
 import { useMediaSession } from '../useMediaSession';
+import type { AndroidAudioService } from '../androidAudioService';
 import { useAppStore } from '../../../store/useAppStore';
 import { createLoopbackTransportPair } from '../signalingTransport';
 import { VIDEO_QUALITY_LADDER } from '../videoStream';
@@ -151,6 +152,13 @@ function fakePlayback(): AudioPlayback & { start: jest.Mock; stop: jest.Mock } {
     getAvailableRoutes: jest.fn(() => ['speaker' as const]),
     setVolume: jest.fn(),
   } as unknown as AudioPlayback & { start: jest.Mock; stop: jest.Mock };
+}
+
+function fakeForegroundAudio(): AndroidAudioService & {
+  start: jest.Mock;
+  stop: jest.Mock;
+} {
+  return { start: jest.fn(), stop: jest.fn() };
 }
 
 async function flush(): Promise<void> {
@@ -296,6 +304,91 @@ describe('useMediaSession', () => {
     act(() => unmount());
     expect(audioTrack.stop).toHaveBeenCalled();
     expect(videoTrack.stop).toHaveBeenCalled();
+  });
+
+  it('parent: starts the Android foreground audio service when remote audio attaches (DMY-23)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-fg1');
+    });
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const foregroundAudioService = fakeForegroundAudio();
+    renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        foregroundAudioService,
+      }),
+    );
+    await flush();
+
+    expect(foregroundAudioService.start).not.toHaveBeenCalled();
+
+    act(() =>
+      pc.emitTrack({
+        track: fakeTrack('audio'),
+        streams: [fakeStream([fakeTrack('audio')])],
+      }),
+    );
+
+    expect(foregroundAudioService.start).toHaveBeenCalledTimes(1);
+    expect(foregroundAudioService.stop).not.toHaveBeenCalled();
+  });
+
+  it('parent: does NOT start the foreground service for a video-only track', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-fg2');
+    });
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const foregroundAudioService = fakeForegroundAudio();
+    renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        foregroundAudioService,
+      }),
+    );
+    await flush();
+
+    act(() =>
+      pc.emitTrack({
+        track: fakeTrack('video'),
+        streams: [fakeStream([fakeTrack('video')], 'stream://v')],
+      }),
+    );
+
+    expect(foregroundAudioService.start).not.toHaveBeenCalled();
+  });
+
+  it('parent: stops the foreground audio service on unmount (no orphaned notification, DMY-23)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-fg3');
+    });
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const foregroundAudioService = fakeForegroundAudio();
+    const { unmount } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        foregroundAudioService,
+      }),
+    );
+    await flush();
+    act(() =>
+      pc.emitTrack({
+        track: fakeTrack('audio'),
+        streams: [fakeStream([fakeTrack('audio')])],
+      }),
+    );
+
+    act(() => unmount());
+
+    expect(foregroundAudioService.stop).toHaveBeenCalled();
   });
 
   it('stays inert with no transport (never fabricates a session)', () => {

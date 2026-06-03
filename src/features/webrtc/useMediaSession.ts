@@ -34,6 +34,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
 import {
+  type AndroidAudioService,
+  createAndroidAudioService,
+} from './androidAudioService';
+import {
   assertEncryptedMediaProfile,
   extractRemoteAudioStream,
   setStreamAudioEnabled,
@@ -72,6 +76,13 @@ export interface UseMediaSessionOptions
   readonly mediaDevices?: MediaDevicesLike;
   /** Parent-unit audio playback / routing controller. Omit for the safe no-op. */
   readonly playback?: AudioPlayback;
+  /**
+   * Parent-unit Android background-audio foreground-service controller (DMY-23).
+   * Started when remote audio begins and stopped on teardown/unmount so playback
+   * survives backgrounding. Omit for the REAL Android service (a safe no-op on
+   * iOS / under Jest); tests inject a fake.
+   */
+  readonly foregroundAudioService?: AndroidAudioService;
   /** Start the parent muted. Defaults to `false`. */
   readonly initiallyMuted?: boolean;
   /**
@@ -109,6 +120,7 @@ export function useMediaSession(
   const {
     mediaDevices,
     playback,
+    foregroundAudioService,
     initiallyMuted = false,
     bandwidth,
     videoEnabled = true,
@@ -151,6 +163,18 @@ export function useMediaSession(
   );
   const playbackRef = useRef(safePlayback);
   playbackRef.current = safePlayback;
+
+  // Android background-audio foreground service (DMY-23): the REAL Android
+  // controller by default (a safe no-op on iOS / under Jest); tests inject a
+  // fake. Started when the parent's remote audio attaches and stopped on
+  // teardown/unmount so playback survives the screen locking. Resolved once so
+  // the stable ref can be read inside the identity-stable signalling callbacks.
+  const foregroundAudio = useMemo(
+    () => foregroundAudioService ?? createAndroidAudioService(),
+    [foregroundAudioService],
+  );
+  const foregroundAudioRef = useRef(foregroundAudio);
+  foregroundAudioRef.current = foregroundAudio;
 
   // baby-unit: ONE capture carries camera + mic; publish both tracks onto the
   // single peer connection BEFORE the answer is negotiated.
@@ -201,6 +225,9 @@ export function useMediaSession(
     if (audio) {
       setStreamAudioEnabled(audio, !mutedRef.current);
       playbackRef.current.start(audio);
+      // Promote to an Android foreground service so remote audio keeps playing
+      // when the parent device backgrounds / locks (DMY-23). No-op off Android.
+      foregroundAudioRef.current.start();
       setHasRemoteAudio(true);
       setPlaying(true);
       return;
@@ -295,6 +322,9 @@ export function useMediaSession(
     setVideoController(null);
     if (playing) {
       safePlayback.stop();
+      // Tear the Android foreground service down so its notification clears and
+      // the OS reclaims the foreground slot (DMY-23). No-op off Android.
+      foregroundAudioRef.current.stop();
       setPlaying(false);
       setHasRemoteAudio(false);
     }
@@ -312,6 +342,9 @@ export function useMediaSession(
       senderRef.current = null;
       peerRef.current = null;
       playbackRef.current.stop();
+      // Hard safety net: release the foreground service on a mid-session unmount
+      // even if `playing` never flipped, so no orphaned notification lingers.
+      foregroundAudioRef.current.stop();
     };
   }, []);
 

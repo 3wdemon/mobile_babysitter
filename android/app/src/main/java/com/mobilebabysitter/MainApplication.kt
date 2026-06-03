@@ -14,8 +14,11 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // App-local native modules that cannot be autolinked (they live in the
+          // app, not an npm package) are registered manually here.
+          // AudioForegroundPackage exposes the background-audio foreground service
+          // (DMY-23) as NativeModules.AudioForegroundModule.
+          add(AudioForegroundPackage())
         },
     )
   }

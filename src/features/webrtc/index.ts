@@ -114,6 +114,23 @@ export {
 } from './iosAudioPlayback';
 export type { AudioSessionNativeModule } from './iosAudioPlayback';
 
+// --- Android background audio: foreground service, no ConnectionService (DMY-23) -
+// Android mirror of DMY-48: a plain started Foreground Service (Kotlin
+// AudioForegroundService + AudioForegroundModule bridge) with a persistent
+// notification and microphone|mediaPlayback foregroundServiceType keeps remote
+// audio playing when the parent backgrounds / locks. start() promotes to the
+// foreground service, stop() tears it down; on iOS / under Jest the native
+// module is absent and this degrades to a safe no-op. Wired into useMediaSession.
+export {
+  createAndroidAudioService,
+  noopAndroidAudioService,
+  resolveAndroidAudioModule,
+} from './androidAudioService';
+export type {
+  AndroidAudioService,
+  AndroidAudioForegroundNativeModule,
+} from './androidAudioService';
+
 // --- Two-way talk: parent→baby push-to-talk + echo cancellation (DMY-20) -----
 // The parent captures its own mic with native echo cancellation (TALK_AUDIO_
 // CONSTRAINTS: echoCancellation/noiseSuppression/autoGainControl) and publishes
