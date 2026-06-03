@@ -14,10 +14,15 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import BabyPairingScreen from '../screens/BabyPairingScreen';
 import { parsePairingPayload } from '../pairingService';
 import { lightTheme } from '../../../theme';
+import { setLocale } from '../../../services/i18n';
+import en from '../../../../locales/en.json';
+import ru from '../../../../locales/ru.json';
 
 function getQrValue(): string {
   return screen.getByTestId('mock-qrcode').props.accessibilityLabel as string;
 }
+
+afterEach(() => setLocale('en'));
 
 describe('BabyPairingScreen', () => {
   it('renders the QR component with a non-empty, valid payload value', () => {
@@ -75,5 +80,21 @@ describe('BabyPairingScreen', () => {
     expect(flat.borderColor).toBe(lightTheme.colors.border);
     expect(flat.borderRadius).toBe(lightTheme.spacing.md);
     expect(flat.padding).toBe(lightTheme.spacing.lg);
+  });
+
+  it('labels the QR frame with a localized accessibilityLabel (DMY-73)', () => {
+    render(<BabyPairingScreen />);
+    const frame = screen.getByTestId('pairing-qr');
+    expect(frame.props.accessibilityLabel).toBe(en.pairing.baby.qrA11y);
+  });
+
+  it('renders Russian copy when the active locale is ru (DMY-73)', () => {
+    setLocale('ru');
+    render(<BabyPairingScreen />);
+    expect(screen.getByText(ru.pairing.baby.title)).toBeTruthy();
+    expect(screen.getByText(ru.pairing.baby.newCode)).toBeTruthy();
+    expect(screen.getByTestId('pairing-qr').props.accessibilityLabel).toBe(
+      ru.pairing.baby.qrA11y,
+    );
   });
 });

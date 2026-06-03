@@ -18,6 +18,9 @@ import {
 import { PAIRING_PAYLOAD_TTL_MS } from '../types';
 import { lightTheme } from '../../../theme';
 import { useAppStore } from '../../../store/useAppStore';
+import { setLocale } from '../../../services/i18n';
+import en from '../../../../locales/en.json';
+import ru from '../../../../locales/ru.json';
 
 const mockRequestMultiple = requestMultiple as jest.MockedFunction<
   typeof requestMultiple
@@ -223,6 +226,30 @@ describe('ParentPairingScreen', () => {
     expect(screen.getByText('Paired')).toBeTruthy();
     expect(useAppStore.getState().connectionStatus).toBe('paired');
     expect(useAppStore.getState().pairedSessionId).toBe(sessionId);
+  });
+
+  it('gives the permission-gate action a localized accessibilityLabel + role (DMY-73)', () => {
+    render(<ParentPairingScreen />);
+    const action = screen.getByTestId('camera-permission-action');
+    expect(action.props.accessibilityRole).toBe('button');
+    expect(action.props.accessibilityLabel).toBe(
+      en.pairing.parent.permission.allowCameraA11y,
+    );
+  });
+
+  it('renders Russian copy on the permission gate when locale is ru (DMY-73)', () => {
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      expect(
+        screen.getByText(ru.pairing.parent.permission.title),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.permission.allowCamera),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
   });
 
   it('styles the permission gate button from design tokens', () => {

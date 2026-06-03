@@ -78,6 +78,54 @@
       }
     }
   },
+  "pairing": {
+    "modeSelect": {
+      "title": "Mobile Babysitter",
+      "useAsBaby": "Use as Baby unit",
+      "useAsBabyA11y": "Use this phone as the baby unit",
+      "useAsParent": "Use as Parent unit",
+      "useAsParentA11y": "Use this phone as the parent unit"
+    },
+    "baby": {
+      "title": "Pair this baby unit",
+      "subtitle": "Scan this code with the parent phone. Nothing leaves your devices.",
+      "qrA11y": "Pairing QR code. Scan it with the parent phone.",
+      "visible": "Visible on your Wi-Fi — the parent phone can find this unit without scanning.",
+      "showCode": "Show the code above to pair.",
+      "newCode": "New code",
+      "newCodeA11y": "Show a fresh pairing code"
+    },
+    "parent": {
+      "permission": {
+        "title": "Camera access needed",
+        "blockedBody": "Camera access is turned off. Enable it in Settings to scan the baby unit’s code. The camera is only used to read the pairing QR.",
+        "deniedBody": "We need the camera to scan the QR code on the baby unit. It’s only used for pairing.",
+        "openSettings": "Open Settings",
+        "openSettingsA11y": "Open Settings to enable the camera",
+        "requesting": "Requesting…",
+        "allowCamera": "Allow camera",
+        "allowCameraA11y": "Allow camera access for pairing"
+      },
+      "paired": {
+        "title": "Paired",
+        "status": "Connected to the baby unit. The live audio/video link starts in a moment.",
+        "connecting": "Connecting to the baby unit…",
+        "scanAgain": "Scan a different unit",
+        "scanAgainA11y": "Scan a different baby unit"
+      },
+      "scan": {
+        "title": "Scan the baby unit",
+        "hint": "Point the camera at the QR code shown on the baby phone.",
+        "noCamera": "No camera available on this device."
+      },
+      "reject": {
+        "invalidTitle": "That code isn’t a pairing code",
+        "invalidBody": "Point the camera at the QR shown on the baby unit. Other QR codes won’t work.",
+        "staleTitle": "That code has expired",
+        "staleBody": "Tap “New code” on the baby unit to show a fresh one, then scan again."
+      }
+    }
+  },
   "about": {
     "version": "Version {{version}}",
     "versionA11y": "Version {{version}}",
