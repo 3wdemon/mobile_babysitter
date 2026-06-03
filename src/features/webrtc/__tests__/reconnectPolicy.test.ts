@@ -262,6 +262,104 @@ describe('createReconnectController (DMY-61)', () => {
     expect(attemptReconnect).toHaveBeenCalledTimes(1);
   });
 
+  it('escalates the FULL default sequence 1s,2s,4s,8s,16s then exhausts at exactly 5 (no 6th)', () => {
+    // AC: exact backoff sequence on the default policy AND exactly maxAttempts
+    // attempts then STOP — drive five failing in-flight attempts and assert each
+    // scheduled delay plus that the 6th never fires.
+    const { ctrl, sched, attemptReconnect, onExhausted } = setup();
+    ctrl.onState('connected');
+
+    const expected = [1000, 2000, 4000, 8000, 16000];
+    ctrl.onState('disconnected'); // schedule attempt 0 @ 1s
+    expect(sched.lastDelay()).toBe(expected[0]);
+
+    for (let i = 0; i < expected.length; i++) {
+      expect(sched.lastDelay()).toBe(expected[i]);
+      sched.fireAll(); // attempt i+1 fires
+      expect(attemptReconnect).toHaveBeenCalledTimes(i + 1);
+      ctrl.onState('failed'); // in-flight attempt fails → schedule next (or exhaust)
+    }
+
+    // After the 5th failing attempt the cap is hit: exhausted, no 6th attempt.
+    expect(attemptReconnect).toHaveBeenCalledTimes(5);
+    expect(onExhausted).toHaveBeenCalledTimes(1);
+    expect(ctrl.snapshot().failedPermanently).toBe(true);
+    expect(ctrl.snapshot().reconnecting).toBe(false);
+    expect(sched.pendingCount()).toBe(0);
+
+    // A further failure does not produce a 6th attempt.
+    ctrl.onState('failed');
+    sched.fireAll();
+    expect(attemptReconnect).toHaveBeenCalledTimes(5);
+  });
+
+  it('caps the backoff at 30s once the exponential exceeds the ceiling (long burst)', () => {
+    // With a high attempt cap the delay must plateau at maxDelayMs (30s) from the
+    // step where 1000 * 2^n first exceeds 30000 (attempt index 5 → 32000 → 30000).
+    const { ctrl, sched } = setup({ maxAttempts: 8 });
+    ctrl.onState('connected');
+    ctrl.onState('disconnected');
+    const seen: number[] = [];
+    for (let i = 0; i < 7; i++) {
+      seen.push(sched.lastDelay() as number);
+      sched.fireAll();
+      ctrl.onState('failed');
+    }
+    // attempts 0..6 → 1s,2s,4s,8s,16s,30s(capped from 32s),30s(capped from 64s).
+    expect(seen).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+  });
+
+  it('connected on the LAST allowed attempt resets cleanly (no spurious exhaustion)', () => {
+    // Edge: the final permitted attempt succeeds. The controller must reset to
+    // idle (attempt 0, not reconnecting, not failed) rather than mark exhausted,
+    // and a LATER drop must restart the burst from the base delay.
+    const { ctrl, sched, attemptReconnect, onExhausted } = setup({
+      maxAttempts: 3,
+    });
+    ctrl.onState('connected');
+    ctrl.onState('disconnected'); // schedule attempt 0
+    sched.fireAll(); // attempt 1
+    ctrl.onState('failed');
+    sched.fireAll(); // attempt 2
+    ctrl.onState('failed');
+    sched.fireAll(); // attempt 3 — the LAST allowed attempt
+    expect(attemptReconnect).toHaveBeenCalledTimes(3);
+
+    // The last attempt connects: clean reset, NOT exhausted.
+    ctrl.onState('connected');
+    expect(onExhausted).not.toHaveBeenCalled();
+    const snap = ctrl.snapshot();
+    expect(snap.failedPermanently).toBe(false);
+    expect(snap.reconnecting).toBe(false);
+    expect(snap.attempt).toBe(0);
+
+    // A later drop restarts from the base delay (1s), not escalated/exhausted.
+    ctrl.onState('disconnected');
+    expect(sched.lastDelay()).toBe(1000);
+    expect(ctrl.snapshot().attempt).toBe(1);
+  });
+
+  it('a re-entrant disconnect on the in-flight attempt continues the SAME burst (increments, no reset)', () => {
+    // Edge: after an attempt fires, the fresh session reports `disconnected`
+    // (not `failed`) — this is the in-flight attempt failing and must advance the
+    // backoff (attempt increments) rather than restart it at the base delay.
+    const { ctrl, sched } = setup();
+    ctrl.onState('connected');
+    ctrl.onState('disconnected'); // schedule attempt 0 @ 1s
+    expect(ctrl.snapshot().attempt).toBe(1);
+
+    sched.fireAll(); // attempt 1 fires (attempt index → 1, in flight)
+    ctrl.onState('connecting'); // making progress (no-op)
+    ctrl.onState('disconnected'); // in-flight attempt drops again → escalate
+    expect(sched.lastDelay()).toBe(2000); // 2s, not reset to 1s
+    expect(ctrl.snapshot().attempt).toBe(2);
+
+    sched.fireAll(); // attempt 2 fires
+    ctrl.onState('disconnected'); // escalate again
+    expect(sched.lastDelay()).toBe(4000);
+    expect(ctrl.snapshot().attempt).toBe(3);
+  });
+
   it('does not stack a second timer on redundant drops before the scheduled attempt', () => {
     const { ctrl, sched } = setup();
     ctrl.onState('connected');

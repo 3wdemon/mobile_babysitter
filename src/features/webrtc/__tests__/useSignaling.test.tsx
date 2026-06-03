@@ -534,6 +534,96 @@ describe('useSignaling', () => {
       expect(result.current.reconnecting).toBe(false);
     });
 
+    it('disconnect→reconnecting→disconnect again continues the SAME burst (attempt increments, not reset)', async () => {
+      // Edge: flapping. After the first backoff tick re-launches the session, a
+      // second unclean drop must advance the attempt (2s, attempt 2), not restart
+      // the burst at the base delay (1s, attempt 1).
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-flap');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      act(() => pc.emitState('connected'));
+
+      // First unclean drop → attempt 1 @ 1s.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnectAttempt).toBe(1);
+      expect(rc.lastDelay()).toBe(1000);
+
+      // Backoff tick re-launches a fresh session.
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      // The fresh session drops again → SAME burst continues: attempt 2 @ 2s.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(true);
+      expect(result.current.reconnectAttempt).toBe(2);
+      expect(rc.lastDelay()).toBe(2000);
+    });
+
+    it('rapid connect/disconnect flapping: a clean reconnect resets the burst to the base delay', async () => {
+      // Edge: after a burst has escalated, a successful reconnect must fully reset
+      // so the NEXT unclean drop starts again at attempt 1 / 1s (not escalated).
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-flap2');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      act(() => pc.emitState('connected'));
+
+      // Escalate a couple of steps.
+      act(() => pc.emitState('disconnected'));
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      act(() => pc.emitState('failed'));
+      expect(rc.lastDelay()).toBe(2000);
+
+      // Reconnect succeeds → banner hidden, counters reset.
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      act(() => pc.emitState('connected'));
+      expect(result.current.reconnecting).toBe(false);
+      expect(result.current.reconnectAttempt).toBe(0);
+
+      // A brand-new drop restarts the burst at the base delay.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnectAttempt).toBe(1);
+      expect(rc.lastDelay()).toBe(1000);
+    });
+
     it('does NOT reconnect on a clean local stop() (no backoff scheduled)', async () => {
       act(() => {
         useAppStore.getState().setRole('parent');

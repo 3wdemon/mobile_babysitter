@@ -59,6 +59,36 @@ describe('ReconnectingBanner', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the exact attempt number while reconnecting and never a retry button', () => {
+    // AC: banner shows the correct attempt number; the retry affordance is offered
+    // ONLY on permanent failure, not during auto-retry.
+    const { rerender } = render(
+      <ReconnectingBanner
+        reconnecting
+        attempt={1}
+        failed={false}
+        onRetry={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(t('webrtc.reconnect.retrying', { attempt: 1 })),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('reconnecting-banner-retry')).toBeNull();
+
+    rerender(
+      <ReconnectingBanner
+        reconnecting
+        attempt={4}
+        failed={false}
+        onRetry={jest.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(t('webrtc.reconnect.retrying', { attempt: 4 })),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('reconnecting-banner-retry')).toBeNull();
+  });
+
   it('failed takes precedence over a stale reconnecting flag', () => {
     render(
       <ReconnectingBanner
