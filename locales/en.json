@@ -177,6 +177,7 @@
       "power": "Power",
       "device": "This device",
       "permissions": "Permissions",
+      "diagnostics": "Diagnostics",
       "about": "About"
     },
     "theme": {
@@ -254,9 +255,21 @@
       "confirmCta": "Re-pair",
       "cancel": "Cancel"
     },
+    "diagnostics": {
+      "label": "Diagnostics",
+      "hint": "View recent app logs and export them for support."
+    },
     "about": {
       "label": "About this app",
       "hint": "Version, privacy policy and app info."
+    }
+  },
+  "diagnostics": {
+    "empty": "No logs captured yet.",
+    "export": {
+      "label": "Export logs",
+      "a11y": "Export recent logs via the share sheet",
+      "shareTitle": "Mobile Babysitter diagnostics"
     }
   }
 }

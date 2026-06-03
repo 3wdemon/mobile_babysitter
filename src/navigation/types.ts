@@ -33,6 +33,8 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   /** Settings screen (theme/role/sensitivity/re-pair/about) — DMY-52. */
   Settings: undefined;
+  /** Diagnostics: in-memory log viewer + redacted export — DMY-62. */
+  Diagnostics: undefined;
 };
 
 /**
