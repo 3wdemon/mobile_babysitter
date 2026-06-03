@@ -97,6 +97,11 @@
   "network": {
     "offline": "No network connection — the monitor can't reach the other phone."
   },
+  "webrtc": {
+    "iceTimeout": {
+      "guidance": "Still trying to connect. Check that both phones are on the same Wi-Fi, then restart the connection."
+    }
+  },
   "alerts": {
     "notification": {
       "channelName": "Baby monitor alerts",

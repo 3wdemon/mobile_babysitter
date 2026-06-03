@@ -22,9 +22,14 @@
  * `connectionstatechange`/`iceconnectionstatechange` event.
  *
  * ## STUN/TURN
- * `iceServers` defaults to {@link DEFAULT_ICE_SERVERS} (empty — host candidates
- * suffice for same-LAN P2P). TURN relay for the cellular fallback is DMY-19 and
- * is deliberately NOT configured here.
+ * `iceServers` defaults to {@link DEFAULT_ICE_SERVERS} — public Google STUN only
+ * (DMY-47, the $0 alternative to the paid TURN relay of DMY-19). Host candidates
+ * cover same-LAN P2P; STUN reflexive candidates extend reach to most NATs WITHOUT
+ * any server cost or third-party relay of media. TURN relay (the only thing that
+ * also defeats SYMMETRIC NAT, at a price) remains DMY-19 and is deliberately NOT
+ * configured here. When STUN is insufficient (symmetric NAT on both ends) ICE may
+ * never reach `connected`; that failure is surfaced as user GUIDANCE via the ICE
+ * connect timeout (see {@link createIceTimeout} / `useSignaling`), not silently.
  *
  * ## Privacy
  * SDP/ICE are sensitive network metadata. We log only coarse facts (e.g. "offer
@@ -49,11 +54,19 @@ import type {
 } from './signalingTypes';
 
 /**
- * Default ICE servers: NONE. For local P2P on the same Wi-Fi, host candidates
- * are sufficient. STUN (for NAT on the same network) can be added later; TURN
- * relay is DMY-19 and is intentionally absent here.
+ * Default ICE servers: public Google STUN, primary + fallback (DMY-47).
+ *
+ * `stun.l.google.com:19302` is the primary; `stun1.l.google.com:19302` is a
+ * second host so a single-endpoint hiccup does not abort gathering. STUN only
+ * discovers the device's server-reflexive (public) address — it never relays
+ * media, so this keeps the privacy-first / $0 stance (no TURN, no third party in
+ * the media path; the paid TURN relay is DMY-19). Symmetric-NAT-on-both-ends is
+ * the case STUN cannot fix; that is handled as guidance via the ICE timeout, not
+ * here. Overridable per-call via {@link PeerConnectionConfig.iceServers}.
  */
-export const DEFAULT_ICE_SERVERS: readonly RtcIceServer[] = [];
+export const DEFAULT_ICE_SERVERS: readonly RtcIceServer[] = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+];
 
 /**
  * Minimal structural type of the native `RTCPeerConnection` we depend on. Keeps

@@ -23,12 +23,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
 import type { ConnectionStatus } from '../../store/types';
+import { t } from '../../services/i18n';
+import {
+  createIceTimeout,
+  type IceTimeout,
+  type IceTimeoutOptions,
+} from './iceTimeout';
 import { createSignalingSession, SignalingSession } from './signalingSession';
 import type { SignalingSessionStatus } from './signalingSession';
 import type {
   PeerConnection,
   PeerConnectionConfig,
   PeerConnectionFactory,
+  PeerConnectionState,
   SignalingRole,
   SignalingSdp,
   SignalingTransport,
@@ -68,6 +75,15 @@ export interface UseSignalingOptions {
    * `true`. Set `false` to drive `start`/`stop` manually.
    */
   readonly autoStart?: boolean;
+  /**
+   * Injected timer primitives for the ICE connect-timeout (DMY-47). Omit in
+   * production (the controller defaults to the host `setTimeout`/`clearTimeout`);
+   * tests pass a fake scheduler so the timeout fires deterministically.
+   */
+  readonly iceTimer?: Pick<IceTimeoutOptions, 'setTimer' | 'clearTimer'> & {
+    /** Override the connect window; defaults to `ICE_CONNECT_TIMEOUT_MS`. */
+    readonly timeoutMs?: number;
+  };
 }
 
 /** Value returned by {@link useSignaling}. */
@@ -80,6 +96,18 @@ export interface UseSignalingState {
   readonly start: () => void;
   /** Manually stop and tear down the handshake. */
   readonly stop: () => void;
+  /**
+   * `true` when ICE stayed in `connecting` past the connect window (DMY-47) —
+   * STUN-only traversal likely failed (e.g. symmetric NAT). Reset to `false`
+   * once `connected` arrives or the session is stopped. The UI shows
+   * {@link UseSignalingState.guidanceMessage} while this is set.
+   */
+  readonly iceTimedOut: boolean;
+  /**
+   * Localised guidance to show while {@link UseSignalingState.iceTimedOut}, or
+   * `null` otherwise ("check Wi-Fi / restart connection").
+   */
+  readonly guidanceMessage: string | null;
 }
 
 /** Map the app `role` onto a signalling role. `null`/baby → responder. */
@@ -106,6 +134,28 @@ function statusToConnectionStatus(
   }
 }
 
+/**
+ * Map the session status onto the {@link PeerConnectionState} the ICE timeout
+ * controller (DMY-47) understands. `idle` carries no obligation → `new`.
+ */
+function statusToPeerState(
+  status: SignalingSessionStatus,
+): PeerConnectionState {
+  switch (status) {
+    case 'connecting':
+      return 'connecting';
+    case 'connected':
+      return 'connected';
+    case 'disconnected':
+      return 'disconnected';
+    case 'failed':
+      return 'failed';
+    case 'idle':
+    default:
+      return 'new';
+  }
+}
+
 export function useSignaling(
   options: UseSignalingOptions = {},
 ): UseSignalingState {
@@ -117,6 +167,7 @@ export function useSignaling(
     onLocalDescription,
     onPeerConnection,
     autoStart = true,
+    iceTimer,
   } = options;
 
   const role = useAppStore(s => s.role);
@@ -125,7 +176,15 @@ export function useSignaling(
 
   const [status, setStatus] = useState<SignalingSessionStatus>('idle');
   const [isActive, setIsActive] = useState(false);
+  const [iceTimedOut, setIceTimedOut] = useState(false);
   const sessionRef = useRef<SignalingSession | null>(null);
+  // The ICE connect-timeout controller for the live session (DMY-47). Created in
+  // `start`, driven by the session status callback, cancelled in `stop`.
+  const iceTimeoutRef = useRef<IceTimeout | null>(null);
+  // Track mount so the timeout callback never setState after unmount.
+  const mountedRef = useRef(true);
+  const iceTimerRef = useRef(iceTimer);
+  iceTimerRef.current = iceTimer;
 
   // All volatile inputs are read through refs so the start/stop callbacks and
   // the auto-start effect are STABLE: a re-render caused by a status update (or
@@ -157,8 +216,12 @@ export function useSignaling(
       session.stop();
       sessionRef.current = null;
     }
+    // Cancel any pending ICE timeout so a torn-down session never fires guidance.
+    iceTimeoutRef.current?.cancel();
+    iceTimeoutRef.current = null;
     setIsActive(false);
     setStatus('idle');
+    setIceTimedOut(false);
   }, []);
 
   const start = useCallback(() => {
@@ -171,6 +234,24 @@ export function useSignaling(
     if (sessionRef.current) {
       return;
     }
+    // Arm the ICE connect-timeout for this session (DMY-47). It is driven below
+    // by the session status callback (connecting arms; connected/terminal
+    // cancels) and fires guidance once if `connected` never arrives in time.
+    const cfg = iceTimerRef.current;
+    const iceTimeout = createIceTimeout({
+      ...(cfg?.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {}),
+      ...(cfg?.setTimer ? { setTimer: cfg.setTimer } : {}),
+      ...(cfg?.clearTimer ? { clearTimer: cfg.clearTimer } : {}),
+      onTimeout: () => {
+        // Guard against a stale fire after unmount/stop (no setState-after-unmount).
+        if (mountedRef.current && sessionRef.current) {
+          setIceTimedOut(true);
+        }
+      },
+    });
+    iceTimeoutRef.current = iceTimeout;
+    setIceTimedOut(false);
+
     const session = createSignalingSession({
       role: roleToSignalingRole(roleRef.current),
       sessionId,
@@ -180,6 +261,14 @@ export function useSignaling(
       onStatusChange: next => {
         setStatus(next);
         setConnectionStatusRef.current(statusToConnectionStatus(next));
+        // Drive the ICE timeout: connecting arms; connected (or a terminal
+        // state) cancels — this is what prevents false guidance when the link
+        // comes up just before the deadline.
+        iceTimeout.onState(statusToPeerState(next));
+        if (next === 'connected') {
+          // Clear any guidance the timeout may have surfaced earlier in a churn.
+          setIceTimedOut(false);
+        }
       },
       onRemoteTrack: event => onRemoteTrackRef.current?.(event),
       onLocalDescription: (description: SignalingSdp) =>
@@ -210,10 +299,24 @@ export function useSignaling(
     };
   }, [autoStart, pairedSessionId, transport, start, stop]);
 
+  // Mount-lifetime guard: ensure no ICE timeout fires (and no setState runs)
+  // after unmount, even in manual mode where the auto-start effect's cleanup
+  // does not run. Idempotent with `stop`'s own cancel.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      iceTimeoutRef.current?.cancel();
+      iceTimeoutRef.current = null;
+    };
+  }, []);
+
   return {
     status,
     isActive,
     start,
     stop,
+    iceTimedOut,
+    guidanceMessage: iceTimedOut ? t('webrtc.iceTimeout.guidance') : null,
   };
 }

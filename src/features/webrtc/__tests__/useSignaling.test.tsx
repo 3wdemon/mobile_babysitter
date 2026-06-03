@@ -183,4 +183,138 @@ describe('useSignaling', () => {
     act(() => result.current.stop());
     expect(pc.close).toHaveBeenCalled();
   });
+
+  describe('ICE connect-timeout guidance (DMY-47)', () => {
+    /** Deterministic scheduler injected via the `iceTimer` option. */
+    function fakeScheduler(): {
+      setTimer: (cb: () => void, ms: number) => unknown;
+      clearTimer: (h: unknown) => void;
+      fire: () => void;
+      armed: () => boolean;
+    } {
+      const pending = new Map<number, () => void>();
+      let next = 1;
+      return {
+        setTimer: cb => {
+          const h = next++;
+          pending.set(h, cb);
+          return h;
+        },
+        clearTimer: h => {
+          pending.delete(h as number);
+        },
+        fire: () => {
+          const snap = [...pending.values()];
+          pending.clear();
+          for (const cb of snap) cb();
+        },
+        armed: () => pending.size > 0,
+      };
+    }
+
+    it('sets iceTimedOut + guidance when connecting never reaches connected', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-1');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      await flush();
+      // Status is connecting → timer armed, no guidance yet.
+      expect(result.current.status).toBe('connecting');
+      expect(result.current.iceTimedOut).toBe(false);
+      expect(result.current.guidanceMessage).toBeNull();
+      expect(sched.armed()).toBe(true);
+
+      act(() => sched.fire());
+      expect(result.current.iceTimedOut).toBe(true);
+      expect(result.current.guidanceMessage).toBe(
+        'Still trying to connect. Check that both phones are on the same Wi-Fi, then restart the connection.',
+      );
+    });
+
+    it('no guidance and timer cleared when connected arrives before timeout', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-2');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      await flush();
+      expect(sched.armed()).toBe(true);
+
+      act(() => pc.emitState('connected'));
+      expect(result.current.status).toBe('connected');
+      // Timer cancelled — firing it now is a no-op (no false guidance).
+      expect(sched.armed()).toBe(false);
+      act(() => sched.fire());
+      expect(result.current.iceTimedOut).toBe(false);
+      expect(result.current.guidanceMessage).toBeNull();
+    });
+
+    it('clears the timer (no leak / no fire) on unmount', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-3');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { unmount } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      await flush();
+      expect(sched.armed()).toBe(true);
+      unmount();
+      // Timer cancelled on unmount; firing it does not throw / setState.
+      expect(sched.armed()).toBe(false);
+      expect(() => act(() => sched.fire())).not.toThrow();
+    });
+
+    it('clears guidance and timer when stopped', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-4');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          autoStart: false,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      act(() => result.current.start());
+      await flush();
+      act(() => sched.fire());
+      expect(result.current.iceTimedOut).toBe(true);
+
+      act(() => result.current.stop());
+      expect(result.current.iceTimedOut).toBe(false);
+      expect(result.current.guidanceMessage).toBeNull();
+    });
+  });
 });
