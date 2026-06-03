@@ -391,6 +391,50 @@ describe('useMediaSession', () => {
     expect(foregroundAudioService.stop).toHaveBeenCalled();
   });
 
+  it('parent: stops the foreground audio service on a mid-session teardown (bye) while still mounted (DMY-23)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-fg4');
+    });
+    const { a, b } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const foregroundAudioService = fakeForegroundAudio();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        foregroundAudioService,
+      }),
+    );
+    await flush();
+
+    // Remote audio attaches: the foreground service starts and playback is live.
+    act(() =>
+      pc.emitTrack({
+        track: fakeTrack('audio'),
+        streams: [fakeStream([fakeTrack('audio')])],
+      }),
+    );
+    expect(foregroundAudioService.start).toHaveBeenCalledTimes(1);
+    expect(result.current.playing).toBe(true);
+    expect(foregroundAudioService.stop).not.toHaveBeenCalled();
+
+    // The peer cleanly hangs up (`bye`) — a normal end of session, NOT an
+    // unmount. The active→inactive transition must tear the foreground service
+    // down and stop playback (the stop path covered here is the in-`playing`
+    // branch, distinct from the unmount safety net).
+    await act(async () => {
+      await b.connect();
+      b.send({ type: 'bye', sessionId: 'sess-fg4', from: 'responder' });
+      for (let i = 0; i < 8; i++) {
+        await Promise.resolve();
+      }
+    });
+
+    expect(foregroundAudioService.stop).toHaveBeenCalledTimes(1);
+    expect(result.current.playing).toBe(false);
+  });
+
   it('stays inert with no transport (never fabricates a session)', () => {
     act(() => {
       useAppStore.getState().setRole('parent');

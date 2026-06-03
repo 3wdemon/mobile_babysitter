@@ -122,10 +122,6 @@ class AudioForegroundService : Service() {
   }
 
   companion object {
-    /** JS-visible action names routed through the native module. */
-    const val ACTION_START = "com.mobilebabysitter.audio.START"
-    const val ACTION_STOP = "com.mobilebabysitter.audio.STOP"
-
     private const val CHANNEL_ID = "mobile_babysitter_audio"
     private const val CHANNEL_NAME = "Baby monitor audio"
     private const val CHANNEL_DESCRIPTION =
@@ -137,7 +133,6 @@ class AudioForegroundService : Service() {
     /** Start the foreground service (idempotent — re-asserts the notification). */
     fun start(context: Context) {
       val intent = Intent(context, AudioForegroundService::class.java)
-      intent.action = ACTION_START
       // startForegroundService is required on O+ so the OS expects the upcoming
       // startForeground call within its grace window.
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -150,7 +145,6 @@ class AudioForegroundService : Service() {
     /** Stop the foreground service and dismiss its notification (idempotent). */
     fun stop(context: Context) {
       val intent = Intent(context, AudioForegroundService::class.java)
-      intent.action = ACTION_STOP
       context.stopService(intent)
     }
   }
