@@ -249,6 +249,10 @@ export function useSignaling(
   // from an unclean drop (DMY-45 wires `bye` teardown — until then a remote
   // hangup will read as `disconnected` and is treated as reconnectable).
   const tearingDownRef = useRef(false);
+  // Set once a remote `bye` arrives (DMY-45): the in-flight `disconnected`
+  // status that follows is a CLEAN remote close, so the status callback must not
+  // arm a reconnect. Distinct from `tearingDownRef` (a LOCAL stop/unmount).
+  const cleanRemoteCloseRef = useRef(false);
   // Track mount so the timeout callback never setState after unmount.
   const mountedRef = useRef(true);
   const iceTimerRef = useRef(iceTimer);
@@ -322,15 +326,35 @@ export function useSignaling(
         // comes up just before the deadline.
         iceTimeoutRef.current?.onState(peerState);
         // Drive the reconnect controller from the same REAL status stream
-        // (DMY-61) — UNLESS a local teardown is in progress (stop()/unmount),
-        // which must NOT be read as an unclean drop worth reconnecting.
-        if (!tearingDownRef.current) {
+        // (DMY-61) — UNLESS a local teardown is in progress (stop()/unmount) OR
+        // the peer cleanly hung up (`bye`, DMY-45), neither of which is an
+        // unclean drop worth reconnecting.
+        if (!tearingDownRef.current && !cleanRemoteCloseRef.current) {
           reconnectRef.current?.onState(peerState);
           syncReconnectState();
         }
         if (next === 'connected') {
           // Clear any guidance the timeout may have surfaced earlier in a churn.
           setIceTimedOut(false);
+        }
+      },
+      onBye: () => {
+        // A clean remote hangup (DMY-45): suppress auto-reconnect (do not chase
+        // a peer that left). `cleanRemoteCloseRef` makes the `disconnected`
+        // status that follows non-reconnectable; cancel the controller so no
+        // backoff tick fires; then drop to inactive so the media hooks release
+        // the camera/mic (no capture leak). The session closes the pc+transport.
+        cleanRemoteCloseRef.current = true;
+        reconnectRef.current?.cancel();
+        reconnectRef.current = null;
+        iceTimeoutRef.current?.cancel();
+        iceTimeoutRef.current = null;
+        sessionRef.current = null;
+        if (mountedRef.current) {
+          setIsActive(false);
+          setReconnecting(false);
+          setReconnectAttempt(0);
+          setReconnectFailed(false);
         }
       },
       onRemoteTrack: event => onRemoteTrackRef.current?.(event),
@@ -368,6 +392,7 @@ export function useSignaling(
     // schedule a fresh attempt: a local stop is a CLEAN teardown.
     reconnectRef.current?.cancel();
     reconnectRef.current = null;
+    cleanRemoteCloseRef.current = false;
     teardownSession();
     // Cancel any pending ICE timeout so a torn-down session never fires guidance.
     iceTimeoutRef.current?.cancel();
@@ -390,6 +415,8 @@ export function useSignaling(
     if (sessionRef.current) {
       return;
     }
+    // Fresh session: clear any clean-close marker from a previous one.
+    cleanRemoteCloseRef.current = false;
     // Arm the ICE connect-timeout for this session (DMY-47). It is driven by the
     // session status callback (connecting arms; connected/terminal cancels) and
     // fires guidance once if `connected` never arrives in time.

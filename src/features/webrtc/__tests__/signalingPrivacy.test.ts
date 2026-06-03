@@ -57,6 +57,9 @@ class MockPeerConnection implements PeerConnection {
   getConnectionState(): PeerConnectionState {
     return this.state;
   }
+  async getStats(): Promise<unknown> {
+    return new Map();
+  }
   hasRemoteDescription(): boolean {
     return this.remoteSet;
   }

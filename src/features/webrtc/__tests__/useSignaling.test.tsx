@@ -57,6 +57,9 @@ class MockPeerConnection implements PeerConnection {
   getConnectionState(): PeerConnectionState {
     return this.state;
   }
+  async getStats(): Promise<unknown> {
+    return new Map();
+  }
   hasRemoteDescription(): boolean {
     return this.remoteSet;
   }
@@ -744,6 +747,48 @@ describe('useSignaling', () => {
       act(() => pc.emitState('disconnected'));
       expect(result.current.reconnecting).toBe(false);
       expect(rc.armed()).toBe(false);
+    });
+
+    it('a remote "bye" tears down cleanly and does NOT auto-reconnect (DMY-45)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-bye-1');
+      });
+      const { a, b } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      // Reach a live connection first (so a later drop WOULD normally reconnect).
+      act(() => pc.emitState('connected'));
+      expect(result.current.status).toBe('connected');
+
+      // Peer politely hangs up: the session reports disconnected AND tears down.
+      await act(async () => {
+        await b.connect();
+        b.send({ type: 'bye', sessionId: 'sess-bye-1', from: 'responder' });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // Clean remote close: NO reconnect armed, the banner stays hidden, and the
+      // session goes inactive (so the media hooks release capture).
+      expect(rc.armed()).toBe(false);
+      expect(result.current.reconnecting).toBe(false);
+      expect(result.current.reconnectAttempt).toBe(0);
+      expect(result.current.isActive).toBe(false);
+      // The peer connection was closed by the session's bye teardown.
+      expect(pc.close).toHaveBeenCalled();
     });
   });
 });

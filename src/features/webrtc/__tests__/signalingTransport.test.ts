@@ -104,15 +104,40 @@ describe('createLoopbackTransportPair', () => {
   });
 });
 
-describe('createLocalSocketTransport (integration stub)', () => {
-  it('throws — not implemented in this issue (DMY-16 integration point)', () => {
+describe('createLocalSocketTransport (real socket transport, DMY-45)', () => {
+  it('responder (baby) uses the listen seam — default throws (no JS WS server in RN)', () => {
     expect(() =>
       createLocalSocketTransport({
-        host: '192.168.1.5',
+        host: '0.0.0.0',
         port: 8443,
         sessionId: SID,
-        role: 'initiator',
+        role: 'responder',
       }),
-    ).toThrow(/not implemented yet/);
+    ).toThrow(/no local WebSocket SERVER/);
+  });
+
+  it('responder delegates to an injected server factory', () => {
+    const fake = createLoopbackTransportPair().a;
+    const serverFactory = jest.fn(() => fake);
+    const tx = createLocalSocketTransport(
+      { host: '0.0.0.0', port: 8443, sessionId: SID, role: 'responder' },
+      { serverFactory },
+    );
+    expect(serverFactory).toHaveBeenCalledTimes(1);
+    expect(tx).toBe(fake);
+  });
+
+  it('initiator (parent) builds a dialing transport (full behaviour: socketSignalingTransport.test)', () => {
+    // Constructing the dialing transport does NOT throw (no factory call until
+    // connect). Full dial behaviour is covered in socketSignalingTransport.test.
+    const tx = createLocalSocketTransport({
+      host: '192.168.1.5',
+      port: 8443,
+      sessionId: SID,
+      role: 'initiator',
+    });
+    expect(typeof tx.connect).toBe('function');
+    expect(typeof tx.send).toBe('function');
+    tx.close();
   });
 });

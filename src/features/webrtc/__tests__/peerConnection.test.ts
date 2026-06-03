@@ -61,6 +61,7 @@ class FakeRtcPeerConnection implements RtcPeerConnectionLike {
     this.dataChannels.push(dc);
     return dc;
   });
+  getStats = jest.fn(async () => new Map([['s', { type: 'outbound-rtp' }]]));
   close = jest.fn(() => {
     this.connectionState = 'closed';
   });
@@ -260,6 +261,40 @@ describe('createPeerConnection', () => {
     expect(() =>
       pc.addAudioTrack(track, { getTracks: () => [track] }),
     ).not.toThrow();
+  });
+
+  it('getStats forwards to the native getStats (DMY-45)', async () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    const report = await pc.getStats();
+    expect(instances[0].getStats).toHaveBeenCalledTimes(1);
+    expect(report).toBeInstanceOf(Map);
+  });
+
+  it('getStats returns an empty report when native getStats is absent', async () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    (instances[0] as { getStats?: unknown }).getStats = undefined;
+    const report = (await pc.getStats()) as Map<unknown, unknown>;
+    expect(report.size).toBe(0);
+  });
+
+  it('getStats returns an empty report (never throws) if native getStats rejects', async () => {
+    const { Ctor, instances } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    instances[0].getStats = jest.fn(async () => {
+      throw new Error('stats boom');
+    });
+    const report = (await pc.getStats()) as Map<unknown, unknown>;
+    expect(report.size).toBe(0);
+  });
+
+  it('getStats returns an empty report after close', async () => {
+    const { Ctor } = makeCtor();
+    const pc = createPeerConnection(undefined, Ctor);
+    pc.close();
+    const report = (await pc.getStats()) as Map<unknown, unknown>;
+    expect(report.size).toBe(0);
   });
 
   it('an unsubscribed handler stops receiving events', () => {

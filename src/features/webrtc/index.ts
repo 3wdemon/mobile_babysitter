@@ -37,6 +37,8 @@ export {
 export {
   createLoopbackTransportPair,
   createLocalSocketTransport,
+  buildSignalingUrl,
+  defaultSignalingServerFactory,
 } from './signalingTransport';
 export { SignalingSession, createSignalingSession } from './signalingSession';
 export type {
@@ -178,6 +180,40 @@ export type {
   BandwidthSignal,
   BandwidthSignalSource,
 } from './videoStream';
+
+// --- getStats-backed bandwidth source (DMY-45) -------------------------------
+// Real adaptive-bitrate signal from RTCPeerConnection.getStats (packet loss +
+// available outgoing bitrate), behind the existing BandwidthSignalSource seam.
+export {
+  createGetStatsBandwidthSource,
+  classifyStats,
+  readSnapshot,
+  DEFAULT_STATS_POLL_MS,
+  DEFAULT_LOSS_THRESHOLD,
+  DEFAULT_MIN_BITRATE_BPS,
+} from './bandwidthSource';
+export type {
+  RtcStatLike,
+  RtcStatsReportLike,
+  StatsReader,
+  StatsSnapshot,
+  GetStatsBandwidthSourceOptions,
+} from './bandwidthSource';
+
+// --- End-to-end media session + transport wiring (DMY-45) --------------------
+// useMediaSession runs ONE signalling session carrying baby audio+video over a
+// single peer connection; useSignalingTransport builds the REAL local socket
+// transport (parent dials; baby listens via a native seam) for the screens.
+export { useMediaSession } from './useMediaSession';
+export type {
+  UseMediaSessionOptions,
+  UseMediaSessionState,
+} from './useMediaSession';
+export { useSignalingTransport } from './useSignalingTransport';
+export type {
+  SignalingEndpoint,
+  UseSignalingTransportOptions,
+} from './useSignalingTransport';
 export type {
   UseVideoStreamOptions,
   UseVideoStreamState,
@@ -202,4 +238,10 @@ export type {
   RtcPeerConnectionLike,
   RtcPeerConnectionCtor,
 } from './peerConnection';
-export type { LocalSocketTransportConfig } from './signalingTransport';
+export type {
+  LocalSocketTransportConfig,
+  LocalSocketTransportOptions,
+  SignalingServerFactory,
+  WebSocketFactory,
+  WebSocketLike,
+} from './signalingTransport';

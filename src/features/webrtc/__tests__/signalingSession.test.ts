@@ -21,6 +21,7 @@ import type {
   PeerConnectionEvents,
   PeerConnectionState,
   SignalingIceCandidate,
+  SignalingMessage,
   SignalingSdp,
 } from '../signalingTypes';
 
@@ -77,6 +78,10 @@ class MockPeerConnection implements PeerConnection {
 
   getConnectionState(): PeerConnectionState {
     return this.state;
+  }
+
+  async getStats(): Promise<unknown> {
+    return new Map();
   }
 
   hasRemoteDescription(): boolean {
@@ -451,6 +456,59 @@ describe('SignalingSession handshake', () => {
     expect(statuses).toContain('disconnected');
     expect(statuses).not.toContain('failed');
     initiator.stop();
+  });
+
+  it('a peer "bye" auto-tears-down: fires onBye and closes the pc + transport (DMY-45)', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const initiatorPc = new MockPeerConnection();
+    const closeTransport = jest.spyOn(a, 'close');
+    let byeCount = 0;
+    const initiator = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => initiatorPc,
+      onBye: () => {
+        byeCount += 1;
+      },
+    });
+    await initiator.start();
+    await b.connect();
+    await flush();
+
+    b.send({ type: 'bye', sessionId: SID, from: 'responder' });
+    await flush();
+
+    // onBye fired, and the session tore down WITHOUT waiting for stop()/unmount.
+    expect(byeCount).toBe(1);
+    expect(initiatorPc.close).toHaveBeenCalledTimes(1);
+    expect(closeTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT echo a "bye" back after receiving a remote "bye" (DMY-45)', async () => {
+    const { a, b } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const fromPeer: SignalingMessage[] = [];
+    // Watch what the initiator sends to the peer.
+    b.onMessage(m => fromPeer.push(m));
+    const initiator = createSignalingSession({
+      role: 'initiator',
+      sessionId: SID,
+      transport: a,
+      createPeerConnection: () => pc,
+    });
+    await initiator.start();
+    await b.connect();
+    await flush();
+    fromPeer.length = 0; // ignore the offer
+
+    b.send({ type: 'bye', sessionId: SID, from: 'responder' });
+    await flush();
+    // A subsequent stop() must NOT send a redundant bye to a peer that left.
+    initiator.stop();
+    await flush();
+
+    expect(fromPeer.some(m => m.type === 'bye')).toBe(false);
   });
 
   it('forwards a remote track to onRemoteTrack', async () => {

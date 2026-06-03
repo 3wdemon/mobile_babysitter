@@ -14,6 +14,8 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { useMediaSession } from '../../webrtc/useMediaSession';
+import { useSignalingTransport } from '../../webrtc/useSignalingTransport';
 import { usePublishService } from '../discovery/useDiscovery';
 import { usePairingSession } from '../usePairingSession';
 
@@ -29,6 +31,17 @@ function BabyPairingScreen() {
   // carries only the ephemeral session id + version (no PII). Re-advertises
   // when "New code" mints a fresh session; withdraws on unmount.
   const { publishing } = usePublishService({ sessionId: payload.sessionId });
+
+  // DMY-45: the baby is the signalling RESPONDER — it must LISTEN for the
+  // parent's dial. React Native has no JS WebSocket server, so the listen
+  // transport is the native seam (SignalingServerFactory); the shipped default
+  // throws → no transport → the media session stays inert until the native
+  // listener lands (the remaining device milestone). Wiring it here means the
+  // baby publishes audio+video over a SINGLE peer connection the instant the
+  // listener exists — no further screen changes needed. The session auto-starts
+  // from the paired state in useSignaling (driven by the live peer events).
+  const transport = useSignalingTransport();
+  useMediaSession({ transport });
 
   return (
     <View

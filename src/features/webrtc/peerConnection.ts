@@ -92,6 +92,12 @@ export interface RtcPeerConnectionLike {
    * the alert channel need not implement it.
    */
   createDataChannel?(label: string, options?: unknown): RtcDataChannelLike;
+  /**
+   * Read a transport stats report (DMY-45). Present on react-native-webrtc's
+   * `RTCPeerConnection`; optional here so a minimal mock that does not exercise
+   * adaptive bitrate / link quality need not implement it.
+   */
+  getStats?(): Promise<unknown>;
   close(): void;
   connectionState?: string;
   // Event handler slots (assigned, not addEventListener, to match RN-WebRTC).
@@ -486,6 +492,19 @@ export function createPeerConnection(
 
     getConnectionState(): PeerConnectionState {
       return lastState;
+    },
+
+    async getStats(): Promise<unknown> {
+      if (closed || typeof pc.getStats !== 'function') {
+        // No stats support / torn down: an empty report keeps callers total.
+        return new Map();
+      }
+      try {
+        return await pc.getStats();
+      } catch {
+        logger.warn('webrtc: getStats failed');
+        return new Map();
+      }
     },
 
     hasRemoteDescription(): boolean {
