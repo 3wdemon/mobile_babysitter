@@ -76,6 +76,14 @@ describe('WelcomeScreen', () => {
     expect(flat.paddingTop).toBe(lightTheme.spacing.xxl);
     expect(flat.paddingBottom).toBe(lightTheme.spacing.lg);
   });
+
+  it('exposes the Continue control as a button with an i18n a11y label (DMY-65)', async () => {
+    renderScreen('Welcome', WelcomeScreen);
+    const button = await screen.findByRole('button', {
+      name: 'Continue to permissions',
+    });
+    expect(button).toBeOnTheScreen();
+  });
 });
 
 describe('PermissionsScreen', () => {
@@ -121,6 +129,21 @@ describe('RoleSelectScreen', () => {
       expect(useAppStore.getState().role).toBe('baby');
       expect(useAppStore.getState().onboardingCompleted).toBe(true);
     });
+  });
+
+  it('exposes each role card as a button with a descriptive i18n a11y label (DMY-65)', async () => {
+    renderScreen('RoleSelect', RoleSelectScreen);
+    await screen.findByText('What is this phone for?');
+    expect(
+      screen.getByRole('button', {
+        name: 'Use this phone as the baby unit',
+      }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole('button', {
+        name: 'Use this phone as the parent unit',
+      }),
+    ).toBeOnTheScreen();
   });
 
   it('uses token-derived surface colour for the option cards (no hard-coded hex)', async () => {

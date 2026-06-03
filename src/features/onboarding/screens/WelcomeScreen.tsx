@@ -115,6 +115,7 @@ function WelcomeScreen({ navigation }: OnboardingScreenProps<'Welcome'>) {
         ]}>
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityLabel={t('onboarding.welcome.continueA11y')}
           style={[
             styles.button,
             {

@@ -17,7 +17,8 @@
           "body": "Every stream is encrypted between your devices, so only you can ever see or hear it."
         }
       },
-      "continue": "Continue"
+      "continue": "Continue",
+      "continueA11y": "Continue to permissions"
     },
     "permissions": {
       "title": "A few permissions",
@@ -66,11 +67,13 @@
       "options": {
         "baby": {
           "title": "Baby unit",
-          "body": "Leave this phone with your baby. It streams audio and video to the parent phone."
+          "body": "Leave this phone with your baby. It streams audio and video to the parent phone.",
+          "a11y": "Use this phone as the baby unit"
         },
         "parent": {
           "title": "Parent unit",
-          "body": "Keep this phone with you. It watches and listens, and alerts you about crying or movement."
+          "body": "Keep this phone with you. It watches and listens, and alerts you about crying or movement.",
+          "a11y": "Use this phone as the parent unit"
         }
       }
     }
@@ -105,6 +108,16 @@
       "retrying": "Reconnecting… (attempt {{attempt}})",
       "lost": "Connection lost.",
       "retry": "Retry"
+    },
+    "talk": {
+      "idleLabel": "Hold to talk",
+      "talkingLabel": "Talking…",
+      "buttonA11yIdle": "Hold to talk to the baby unit",
+      "buttonA11yTalking": "Talking — release to stop",
+      "indicatorA11y": "Talking to the baby unit",
+      "indicatorText": "Your voice is going to the baby unit",
+      "hintReady": "Hold the button to speak. Echo cancellation keeps it feedback-free.",
+      "hintUnavailable": "Talk is available once the connection is up."
     }
   },
   "alerts": {
