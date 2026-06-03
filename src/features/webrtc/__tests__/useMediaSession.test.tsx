@@ -14,6 +14,7 @@
  *   - cleanup releases camera+mic on unmount (AC #3, no capture leak).
  */
 import { act, renderHook } from '@testing-library/react-native';
+import { NativeModules, Platform } from 'react-native';
 
 import { useMediaSession } from '../useMediaSession';
 import type { AndroidAudioService } from '../androidAudioService';
@@ -433,6 +434,126 @@ describe('useMediaSession', () => {
 
     expect(foregroundAudioService.stop).toHaveBeenCalledTimes(1);
     expect(result.current.playing).toBe(false);
+  });
+
+  // --- iOS background-audio session wiring (DMY-74) ------------------------
+  //
+  // An explicitly-injected playback controller (a test fake here) must be driven
+  // exactly like the production one: start() on remote audio, stop() on teardown.
+  // This is the seam the iOS AVAudioSession controller (DMY-48) plugs into, and
+  // it must keep working regardless of platform so tests stay deterministic.
+  it('parent: an injected playback is activated on remote audio and deactivated on unmount (DMY-74)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-ios1');
+    });
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const playback = fakePlayback();
+    const { unmount } = renderHook(() =>
+      useMediaSession({ transport: a, createPeerConnection: () => pc, playback }),
+    );
+    await flush();
+
+    expect(playback.start).not.toHaveBeenCalled();
+
+    act(() =>
+      pc.emitTrack({
+        track: fakeTrack('audio'),
+        streams: [fakeStream([fakeTrack('audio')])],
+      }),
+    );
+    expect(playback.start).toHaveBeenCalledTimes(1);
+
+    act(() => unmount());
+    expect(playback.stop).toHaveBeenCalled();
+  });
+
+  describe('iOS platform default (DMY-74)', () => {
+    const originalOS = Platform.OS;
+
+    function mockAudioSession(): { activate: jest.Mock; deactivate: jest.Mock } {
+      return {
+        activate: jest.fn(async () => {}),
+        deactivate: jest.fn(async () => {}),
+      };
+    }
+
+    afterEach(() => {
+      Platform.OS = originalOS;
+      delete (NativeModules as Record<string, unknown>).AudioSessionModule;
+    });
+
+    it('parent on iOS: activates the AVAudioSession on remote audio and deactivates on teardown (bye)', async () => {
+      Platform.OS = 'ios';
+      const native = mockAudioSession();
+      (NativeModules as Record<string, unknown>).AudioSessionModule = native;
+
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ios2');
+      });
+      const { a, b } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      // No `playback` injected: the hook must resolve the iOS default itself.
+      const { result } = renderHook(() =>
+        useMediaSession({ transport: a, createPeerConnection: () => pc }),
+      );
+      await flush();
+      expect(native.activate).not.toHaveBeenCalled();
+
+      act(() =>
+        pc.emitTrack({
+          track: fakeTrack('audio'),
+          streams: [fakeStream([fakeTrack('audio')])],
+        }),
+      );
+      await flush();
+      expect(native.activate).toHaveBeenCalledTimes(1);
+      expect(result.current.playing).toBe(true);
+
+      // A clean hang-up (`bye`) must release the session (AC3, mic indicator).
+      await act(async () => {
+        await b.connect();
+        b.send({ type: 'bye', sessionId: 'sess-ios2', from: 'responder' });
+        for (let i = 0; i < 8; i++) {
+          await Promise.resolve();
+        }
+      });
+      expect(native.deactivate).toHaveBeenCalledTimes(1);
+      expect(result.current.playing).toBe(false);
+    });
+
+    it('parent on Android: never touches the iOS AVAudioSession (no regression)', async () => {
+      // Even with a module registered, resolveAudioSessionModule returns undefined
+      // off iOS, so the platform default stays the safe no-op.
+      Platform.OS = 'android';
+      const native = mockAudioSession();
+      (NativeModules as Record<string, unknown>).AudioSessionModule = native;
+
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ios3');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const { unmount } = renderHook(() =>
+        useMediaSession({ transport: a, createPeerConnection: () => pc }),
+      );
+      await flush();
+
+      act(() =>
+        pc.emitTrack({
+          track: fakeTrack('audio'),
+          streams: [fakeStream([fakeTrack('audio')])],
+        }),
+      );
+      await flush();
+      act(() => unmount());
+
+      expect(native.activate).not.toHaveBeenCalled();
+      expect(native.deactivate).not.toHaveBeenCalled();
+    });
   });
 
   it('stays inert with no transport (never fabricates a session)', () => {

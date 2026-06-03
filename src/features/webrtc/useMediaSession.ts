@@ -31,6 +31,7 @@
  * a device milestone; every seam used to do it is real.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -44,6 +45,7 @@ import {
   stopStream,
 } from './audioStream';
 import { createSafeAudioPlayback } from './audioPlayback';
+import { createIosAudioPlayback } from './iosAudioPlayback';
 import { createGetStatsBandwidthSource } from './bandwidthSource';
 import type { RtcStatsReportLike } from './bandwidthSource';
 import {
@@ -74,7 +76,15 @@ export interface UseMediaSessionOptions
   extends Omit<UseSignalingOptions, 'onPeerConnection' | 'onRemoteTrack'> {
   /** Media-devices source for baby-unit capture. Omit for the real one. */
   readonly mediaDevices?: MediaDevicesLike;
-  /** Parent-unit audio playback / routing controller. Omit for the safe no-op. */
+  /**
+   * Parent-unit audio playback / routing controller. Omit to use the PLATFORM
+   * default: on iOS the background-audio AVAudioSession controller (DMY-48/74)
+   * so remote audio survives the screen locking; on Android / under Jest the
+   * shared safe no-op (Android background audio is the separate
+   * {@link foregroundAudioService} foreground-service seam). An explicitly-passed
+   * controller (a test fake, or a call site selecting per platform) always wins
+   * over the default.
+   */
   readonly playback?: AudioPlayback;
   /**
    * Parent-unit Android background-audio foreground-service controller (DMY-23).
@@ -127,6 +137,20 @@ export function useMediaSession(
     ...signalingOptions
   } = options;
 
+  // Resolve the parent-unit playback controller once. An explicitly-injected
+  // `playback` (a test fake, or a call site that selects per platform) ALWAYS
+  // wins; with none we fall back to the platform default: on iOS the
+  // background-audio AVAudioSession controller (DMY-48/74) so remote audio keeps
+  // playing with the screen locked, elsewhere (Android / Jest) the shared safe
+  // no-op (Android background audio is handled by the SEPARATE foreground-service
+  // seam below). createIosAudioPlayback itself degrades to the no-op off iOS, so
+  // this branch never produces a live iOS session under Jest / on Android.
+  const resolvedPlayback = useMemo(
+    () =>
+      playback ?? (Platform.OS === 'ios' ? createIosAudioPlayback() : undefined),
+    [playback],
+  );
+
   const role = useAppStore(s => s.role);
 
   const [remoteStreamUrl, setRemoteStreamUrl] = useState<string | null>(null);
@@ -158,8 +182,8 @@ export function useMediaSession(
   qualityIndexRef.current = qualityIndex;
 
   const safePlayback = useMemo(
-    () => createSafeAudioPlayback(playback),
-    [playback],
+    () => createSafeAudioPlayback(resolvedPlayback),
+    [resolvedPlayback],
   );
   const playbackRef = useRef(safePlayback);
   playbackRef.current = safePlayback;
