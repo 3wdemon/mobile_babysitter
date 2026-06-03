@@ -282,6 +282,13 @@ export interface PeerConnection {
   ): () => void;
   /** Current connection state. */
   getConnectionState(): PeerConnectionState;
+  /**
+   * Read a fresh transport stats report (DMY-45). Backs the `getStats`
+   * bandwidth source (adaptive bitrate) and the link-quality indicator. Returns
+   * an iterable/Map-like of stat entries; resolves to an empty report if the
+   * underlying connection does not support `getStats` (a minimal mock).
+   */
+  getStats(): Promise<unknown>;
   /** Whether a remote description has been applied (gates ICE buffering). */
   hasRemoteDescription(): boolean;
   /** Close the underlying peer connection and release resources. Idempotent. */

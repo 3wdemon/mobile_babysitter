@@ -52,7 +52,6 @@ import {
 } from './audioStream';
 import {
   VIDEO_QUALITY_LADDER,
-  bandwidthSignalForState,
   extractRemoteVideoStream,
   getLocalVideoStream,
   nextQualityIndex,
@@ -60,6 +59,8 @@ import {
   streamUrlOf,
   videoTracksOf,
 } from './videoStream';
+import { createGetStatsBandwidthSource } from './bandwidthSource';
+import type { RtcStatsReportLike } from './bandwidthSource';
 import { createSenderVideoTrackController } from './videoTrackController';
 import { useSignaling } from './useSignaling';
 import type {
@@ -273,10 +274,15 @@ export function useVideoStream(
     }
   }, []);
 
-  // Subscribe to the bandwidth source on the baby-unit. With no explicit source,
-  // derive a coarse signal from the peer connection-state transitions (a
-  // zero-dependency proxy). Either way the connection is never recreated.
+  // Subscribe to the bandwidth source on the baby-unit (DMY-45). Priority:
+  //   1. an explicitly-injected source (tests / a custom provider);
+  //   2. a REAL getStats-backed source over the live peer connection — packet
+  //      loss + available outgoing bitrate drive the signal (the AC's "real"
+  //      adaptive bitrate), replacing the old connection-state proxy.
+  // Either way setParameters reshapes the LIVE sender — the connection is never
+  // recreated. Only runs once the peer connection exists (signaling.isActive).
   const isBaby = role === 'baby';
+  const isActiveForBandwidth = signaling.isActive;
   useEffect(() => {
     if (!isBaby) {
       return;
@@ -284,15 +290,18 @@ export function useVideoStream(
     if (bandwidth) {
       return bandwidth.subscribe(onBandwidthSignal);
     }
-    // Fallback proxy: map connection-state changes onto a bandwidth signal.
     const pc = peerRef.current;
     if (!pc) {
       return;
     }
-    return pc.on('connectionstatechange', state => {
-      onBandwidthSignal(bandwidthSignalForState(state));
+    // getStats-backed source: poll the live connection's transport stats. The
+    // reader is the pc's getStats; the source owns its own poll timer and stops
+    // when this effect unsubscribes (session teardown / unmount).
+    const source = createGetStatsBandwidthSource({
+      read: () => pc.getStats() as Promise<RtcStatsReportLike>,
     });
-  }, [isBaby, bandwidth, onBandwidthSignal, signaling.isActive]);
+    return source.subscribe(onBandwidthSignal);
+  }, [isBaby, bandwidth, onBandwidthSignal, isActiveForBandwidth]);
 
   // Clean up media when an ACTIVE session goes inactive (user stop / failure).
   // Only on a true active→inactive transition — never on the initial inactive
