@@ -18,6 +18,9 @@ import {
 import { PAIRING_PAYLOAD_TTL_MS } from '../types';
 import { lightTheme } from '../../../theme';
 import { useAppStore } from '../../../store/useAppStore';
+import { setLocale } from '../../../services/i18n';
+import en from '../../../../locales/en.json';
+import ru from '../../../../locales/ru.json';
 
 const mockRequestMultiple = requestMultiple as jest.MockedFunction<
   typeof requestMultiple
@@ -223,6 +226,82 @@ describe('ParentPairingScreen', () => {
     expect(screen.getByText('Paired')).toBeTruthy();
     expect(useAppStore.getState().connectionStatus).toBe('paired');
     expect(useAppStore.getState().pairedSessionId).toBe(sessionId);
+  });
+
+  it('gives the permission-gate action a localized accessibilityLabel + role (DMY-73)', () => {
+    render(<ParentPairingScreen />);
+    const action = screen.getByTestId('camera-permission-action');
+    expect(action.props.accessibilityRole).toBe('button');
+    expect(action.props.accessibilityLabel).toBe(
+      en.pairing.parent.permission.allowCameraA11y,
+    );
+  });
+
+  it('renders Russian copy on the permission gate when locale is ru (DMY-73)', () => {
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      expect(
+        screen.getByText(ru.pairing.parent.permission.title),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.permission.allowCamera),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
+  });
+
+  it('localizes the invalid-code reject banner under ru (DMY-73)', async () => {
+    // Guards the REJECT_KEYS -> t() indirection: a typo in the key map would
+    // render i18n-js's "[missing ...]" marker instead of the ru copy. The
+    // English-regex tests above would not catch a ru-only key drift; this does.
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('camera-permission-action'));
+      });
+
+      act(() => {
+        __emitScan('https://example.com/not-our-qr');
+      });
+
+      expect(
+        screen.getByText(ru.pairing.parent.reject.invalidTitle),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.reject.invalidBody),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
+  });
+
+  it('localizes the expired-code reject banner under ru (DMY-73)', async () => {
+    const stale = serializePairingPayload(
+      createPairingPayload(undefined, Date.now() - PAIRING_PAYLOAD_TTL_MS - 5000),
+    );
+    setLocale('ru');
+    try {
+      render(<ParentPairingScreen />);
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('camera-permission-action'));
+      });
+
+      act(() => {
+        __emitScan(stale);
+      });
+
+      expect(
+        screen.getByText(ru.pairing.parent.reject.staleTitle),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(ru.pairing.parent.reject.staleBody),
+      ).toBeTruthy();
+    } finally {
+      setLocale('en');
+    }
   });
 
   it('styles the permission gate button from design tokens', () => {

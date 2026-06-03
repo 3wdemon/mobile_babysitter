@@ -33,6 +33,7 @@ import {
 
 import LoadingState from '../../../components/LoadingState';
 import { useTheme } from '../../../hooks/useTheme';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { logger } from '../../../services/logger';
 import { useAppStore } from '../../../store/useAppStore';
 import ParentMediaView from '../../webrtc/ParentMediaView';
@@ -47,23 +48,24 @@ import type { PairingScanRejectReason } from '../types';
 /** QR codes only — we are not scanning barcodes/faces. */
 const SCAN_TYPES: ScannedObjectType[] = ['qr'];
 
-/** User-facing copy for each rejection reason. */
-const REJECT_COPY: Record<
+/** i18n key suffixes for each rejection reason (resolved via `t()` at render). */
+const REJECT_KEYS: Record<
   PairingScanRejectReason,
   { title: string; body: string }
 > = {
   invalid: {
-    title: 'That code isn’t a pairing code',
-    body: 'Point the camera at the QR shown on the baby unit. Other QR codes won’t work.',
+    title: 'pairing.parent.reject.invalidTitle',
+    body: 'pairing.parent.reject.invalidBody',
   },
   stale: {
-    title: 'That code has expired',
-    body: 'Tap “New code” on the baby unit to show a fresh one, then scan again.',
+    title: 'pairing.parent.reject.staleTitle',
+    body: 'pairing.parent.reject.staleBody',
   },
 };
 
 function ParentPairingScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { statuses, requesting, request } = usePermissions();
   const cameraStatus = statuses.camera;
   const hasCamera = cameraStatus === 'granted';
@@ -185,7 +187,7 @@ function ParentPairingScreen() {
             },
           ]}
         >
-          Camera access needed
+          {t('pairing.parent.permission.title')}
         </Text>
         <Text
           style={[
@@ -199,12 +201,17 @@ function ParentPairingScreen() {
           ]}
         >
           {blocked
-            ? 'Camera access is turned off. Enable it in Settings to scan the baby unit’s code. The camera is only used to read the pairing QR.'
-            : 'We need the camera to scan the QR code on the baby unit. It’s only used for pairing.'}
+            ? t('pairing.parent.permission.blockedBody')
+            : t('pairing.parent.permission.deniedBody')}
         </Text>
 
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityLabel={
+            blocked
+              ? t('pairing.parent.permission.openSettingsA11y')
+              : t('pairing.parent.permission.allowCameraA11y')
+          }
           accessibilityState={{ disabled: requesting }}
           disabled={requesting}
           testID="camera-permission-action"
@@ -231,10 +238,10 @@ function ParentPairingScreen() {
             ]}
           >
             {blocked
-              ? 'Open Settings'
+              ? t('pairing.parent.permission.openSettings')
               : requesting
-              ? 'Requesting…'
-              : 'Allow camera'}
+              ? t('pairing.parent.permission.requesting')
+              : t('pairing.parent.permission.allowCamera')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -261,7 +268,7 @@ function ParentPairingScreen() {
             },
           ]}
         >
-          Paired
+          {t('pairing.parent.paired.title')}
         </Text>
         <Text
           testID="paired-status"
@@ -275,15 +282,14 @@ function ParentPairingScreen() {
             },
           ]}
         >
-          Connected to the baby unit. The live audio/video link starts in a
-          moment.
+          {t('pairing.parent.paired.status')}
         </Text>
 
         {connecting ? (
           <View style={mediaViewStyle}>
             <LoadingState
               testID="parent-connecting"
-              message="Connecting to the baby unit…"
+              message={t('pairing.parent.paired.connecting')}
             />
           </View>
         ) : null}
@@ -300,6 +306,7 @@ function ParentPairingScreen() {
 
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityLabel={t('pairing.parent.paired.scanAgainA11y')}
           testID="scan-again"
           style={[
             styles.buttonOutline,
@@ -322,7 +329,7 @@ function ParentPairingScreen() {
               },
             ]}
           >
-            Scan a different unit
+            {t('pairing.parent.paired.scanAgain')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -330,7 +337,10 @@ function ParentPairingScreen() {
   }
 
   // --- Scanning (+ inline error banner) -------------------------------------
-  const reject = errorReason ? REJECT_COPY[errorReason] : null;
+  const rejectKeys = errorReason ? REJECT_KEYS[errorReason] : null;
+  const reject = rejectKeys
+    ? { title: t(rejectKeys.title), body: t(rejectKeys.body) }
+    : null;
 
   return (
     <View
@@ -359,7 +369,7 @@ function ParentPairingScreen() {
               },
             ]}
           >
-            No camera available on this device.
+            {t('pairing.parent.scan.noCamera')}
           </Text>
         </View>
       )}
@@ -386,7 +396,7 @@ function ParentPairingScreen() {
             },
           ]}
         >
-          {reject ? reject.title : 'Scan the baby unit'}
+          {reject ? reject.title : t('pairing.parent.scan.title')}
         </Text>
         <Text
           testID={reject ? 'scan-error' : 'scan-hint'}
@@ -399,9 +409,7 @@ function ParentPairingScreen() {
             },
           ]}
         >
-          {reject
-            ? reject.body
-            : 'Point the camera at the QR code shown on the baby phone.'}
+          {reject ? reject.body : t('pairing.parent.scan.hint')}
         </Text>
 
         <View style={discoveryStyle}>

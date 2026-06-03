@@ -14,6 +14,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { useTheme } from '../../../hooks/useTheme';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { usePublishService } from '../discovery/useDiscovery';
 import { usePairingSession } from '../usePairingSession';
 
@@ -22,6 +23,7 @@ const QR_SIZE = 240;
 
 function BabyPairingScreen() {
   const theme = useTheme();
+  const { t } = useTranslation();
   const { payload, qrValue, regenerate } = usePairingSession();
 
   // mDNS/Bonjour: advertise this baby-unit on the LAN so a parent on the same
@@ -56,7 +58,7 @@ function BabyPairingScreen() {
             marginBottom: theme.spacing.sm,
           },
         ]}>
-        Pair this baby unit
+        {t('pairing.baby.title')}
       </Text>
 
       <Text
@@ -69,11 +71,13 @@ function BabyPairingScreen() {
             marginBottom: theme.spacing.xl,
           },
         ]}>
-        Scan this code with the parent phone. Nothing leaves your devices.
+        {t('pairing.baby.subtitle')}
       </Text>
 
       <View
         testID="pairing-qr"
+        accessibilityRole="image"
+        accessibilityLabel={t('pairing.baby.qrA11y')}
         style={[
           styles.qrFrame,
           {
@@ -103,12 +107,13 @@ function BabyPairingScreen() {
           },
         ]}>
         {publishing
-          ? 'Visible on your Wi-Fi — the parent phone can find this unit without scanning.'
-          : 'Show the code above to pair.'}
+          ? t('pairing.baby.visible')
+          : t('pairing.baby.showCode')}
       </Text>
 
       <TouchableOpacity
         accessibilityRole="button"
+        accessibilityLabel={t('pairing.baby.newCodeA11y')}
         style={[
           styles.button,
           {
@@ -129,7 +134,7 @@ function BabyPairingScreen() {
               fontWeight: theme.typography.fontWeights.semibold,
             },
           ]}>
-          New code
+          {t('pairing.baby.newCode')}
         </Text>
       </TouchableOpacity>
     </View>

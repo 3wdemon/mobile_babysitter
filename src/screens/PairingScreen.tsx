@@ -8,10 +8,12 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { useTheme } from '../hooks/useTheme';
+import { useTranslation } from '../hooks/useTranslation';
 import type { RootStackScreenProps } from '../navigation/types';
 
 function PairingScreen({ navigation }: RootStackScreenProps<'Pairing'>) {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -24,24 +26,26 @@ function PairingScreen({ navigation }: RootStackScreenProps<'Pairing'>) {
             fontWeight: theme.typography.fontWeights.semibold,
           },
         ]}>
-        Mobile Babysitter
+        {t('pairing.modeSelect.title')}
       </Text>
 
       <TouchableOpacity
         accessibilityRole="button"
+        accessibilityLabel={t('pairing.modeSelect.useAsBabyA11y')}
         style={[styles.button, { backgroundColor: theme.colors.primary }]}
         onPress={() => navigation.navigate('Baby')}>
         <Text style={[styles.buttonLabel, { color: theme.colors.onPrimary }]}>
-          Use as Baby unit
+          {t('pairing.modeSelect.useAsBaby')}
         </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         accessibilityRole="button"
+        accessibilityLabel={t('pairing.modeSelect.useAsParentA11y')}
         style={[styles.button, { backgroundColor: theme.colors.primary }]}
         onPress={() => navigation.navigate('Parent')}>
         <Text style={[styles.buttonLabel, { color: theme.colors.onPrimary }]}>
-          Use as Parent unit
+          {t('pairing.modeSelect.useAsParent')}
         </Text>
       </TouchableOpacity>
     </View>
