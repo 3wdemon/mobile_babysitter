@@ -30,8 +30,11 @@
  * for NOISE a higher threshold = LESS sensitive, for MOTION a lower threshold =
  * MORE sensitive — so each maps "Low/Medium/High sensitivity" to the right end.
  *
- * "Support development" (DMY-51) is intentionally omitted: that purchase flow is
- * not built yet, so surfacing a dead CTA would be misleading.
+ * "Support development" (DMY-51): while FREE_MODE is on (MVP default) every
+ * feature is free, so this is a PASSIVE "coming soon" placeholder — a static,
+ * non-pressable info row with NO purchase flow / IAP. It is shown only when
+ * FREE_MODE is on; once DMY-27 lands and FREE_MODE flips off, replace it with
+ * the real purchase entry point.
  *
  * The presentational sub-components (Section / SwitchRow / Segmented /
  * ActionRow) are hoisted to module scope and receive `theme` as a prop so they
@@ -50,6 +53,7 @@ import {
 } from 'react-native';
 
 import PinSettings from '../features/auth/PinSettings';
+import { FREE_MODE } from '../features/monetization';
 import PermissionReRequest from '../features/onboarding/PermissionReRequest';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
@@ -274,6 +278,65 @@ function ActionRow({
   );
 }
 
+/**
+ * A static, non-interactive info row with an optional trailing badge. Used for
+ * the "Support development — coming soon" placeholder (DMY-51): it deliberately
+ * has NO onPress / purchase flow, just a label, hint and a "coming soon" badge.
+ */
+function InfoRow({
+  testID,
+  label,
+  hint,
+  badge,
+  theme,
+}: {
+  testID: string;
+  label: string;
+  hint: string;
+  badge: string;
+  theme: Theme;
+}) {
+  return (
+    <View
+      testID={testID}
+      accessibilityRole="text"
+      accessibilityLabel={`${label}. ${badge}. ${hint}`}
+      style={[styles.card, cardStyle(theme)]}
+    >
+      <View style={styles.rowBetween}>
+        <Text style={rowLabelStyle(theme)}>{label}</Text>
+        <View
+          testID={`${testID}-badge`}
+          style={[
+            styles.badge,
+            {
+              backgroundColor: theme.colors.border,
+              borderRadius: theme.spacing.xs,
+              paddingHorizontal: theme.spacing.sm,
+              paddingVertical: theme.spacing.xs,
+              marginLeft: theme.spacing.sm,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.badgeText,
+              {
+                color: theme.colors.textMuted,
+                fontSize: theme.typography.fontSizes.sm,
+                fontWeight: theme.typography.fontWeights.semibold,
+              },
+            ]}
+          >
+            {badge}
+          </Text>
+        </View>
+      </View>
+      <Text style={rowHintStyle(theme)}>{hint}</Text>
+    </View>
+  );
+}
+
 // Token-driven dynamic styles (computed per theme; static layout lives in
 // `styles` below).
 const rowLabelStyle = (theme: Theme) => ({
@@ -487,6 +550,22 @@ function SettingsScreen({ navigation }: RootStackScreenProps<'Settings'>) {
         theme={theme}
       />
 
+      {/* Support development (DMY-51): passive "coming soon" placeholder, shown
+          only while FREE_MODE is on (MVP — everything is free). No purchase
+          flow; replaced by the real entry point when DMY-27 lands. */}
+      {FREE_MODE ? (
+        <>
+          <Section title={t('settings.sections.support')} theme={theme} />
+          <InfoRow
+            testID="settings-support"
+            label={t('settings.support.label')}
+            hint={t('settings.support.hint')}
+            badge={t('settings.support.badge')}
+            theme={theme}
+          />
+        </>
+      ) : null}
+
       {/* About (DMY-64) */}
       <Section title={t('settings.sections.about')} theme={theme} />
       <ActionRow
@@ -529,6 +608,10 @@ const styles = StyleSheet.create({
   segmentText: {
     textAlign: 'center',
   },
+  badge: {
+    alignSelf: 'flex-start',
+  },
+  badgeText: {},
 });
 
 export default SettingsScreen;

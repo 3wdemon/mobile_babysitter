@@ -11,10 +11,15 @@
  * `onUpgradePress`; there is NO StoreKit / purchase here (that is DMY-27,
  * blocked-external). All colours/spacing/typography come from `useTheme`; no
  * raw hex.
+ *
+ * FREE_MODE (DMY-51): while the MVP "everything is free" flag is on there is no
+ * paywall, so the banner renders nothing. It returns to life only when
+ * FREE_MODE is flipped off (DMY-27), restoring the DMY-11 surface unchanged.
  */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../../hooks/useTheme';
+import { FREE_MODE } from './freeMode';
 
 export interface FreeTierLimitBannerProps {
   /**
@@ -24,13 +29,25 @@ export interface FreeTierLimitBannerProps {
   readonly onUpgradePress?: () => void;
   /** Optional dismiss handler; when provided a "Not now" affordance is shown. */
   readonly onDismiss?: () => void;
+  /**
+   * Override for the {@link FREE_MODE} flag (DMY-51). Defaults to the module
+   * constant; tests inject `false` to render the DMY-11 banner with FREE_MODE
+   * conceptually off. Production never passes this.
+   */
+  readonly freeMode?: boolean;
 }
 
 function FreeTierLimitBanner({
   onUpgradePress,
   onDismiss,
+  freeMode = FREE_MODE,
 }: FreeTierLimitBannerProps) {
   const theme = useTheme();
+
+  // FREE_MODE on (MVP default): no paywall surface at all.
+  if (freeMode) {
+    return null;
+  }
 
   return (
     <View

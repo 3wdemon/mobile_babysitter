@@ -178,6 +178,7 @@
       "device": "This device",
       "permissions": "Permissions",
       "diagnostics": "Diagnostics",
+      "support": "Support development",
       "about": "About"
     },
     "theme": {
@@ -258,6 +259,11 @@
     "diagnostics": {
       "label": "Diagnostics",
       "hint": "View recent app logs and export them for support."
+    },
+    "support": {
+      "label": "Support development",
+      "hint": "Every feature is free during the MVP. A way to chip in is on the way — thanks for your patience.",
+      "badge": "Coming soon"
     },
     "about": {
       "label": "About this app",

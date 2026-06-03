@@ -109,12 +109,18 @@ describe('SettingsScreen rendering', () => {
     expect(screen.getByTestId('permission-re-request')).toBeOnTheScreen();
   });
 
-  it('does NOT render a Support development CTA (DMY-51 not built)', async () => {
+  it('renders the Support development "coming soon" placeholder (DMY-51, FREE_MODE on)', async () => {
     renderSettings();
     await waitFor(() => {
       expect(screen.getByTestId('settings-screen')).toBeOnTheScreen();
     });
-    expect(screen.queryByText(/Support development/i)).toBeNull();
+    // The placeholder row + its "coming soon" badge are present.
+    const row = screen.getByTestId('settings-support');
+    expect(row).toBeOnTheScreen();
+    expect(screen.getByTestId('settings-support-badge')).toBeOnTheScreen();
+    // It is a passive info row — NOT a button / pressable purchase CTA.
+    expect(row.props.accessibilityRole).not.toBe('button');
+    expect(row.props.onPress).toBeUndefined();
   });
 });
 
