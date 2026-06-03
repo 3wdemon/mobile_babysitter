@@ -15,6 +15,23 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      Background-audio foreground service (DMY-23). The parent-unit keeps the
+      remote monitor audio playing while the app is backgrounded / the screen is
+      locked via a plain Foreground Service (NOT ConnectionService — see
+      AudioForegroundService.kt for the rationale; mirrors the iOS DMY-48 decision
+      to drop CallKit). Android 14+ requires the foregroundServiceType-specific
+      permissions in addition to the umbrella FOREGROUND_SERVICE one:
+        FOREGROUND_SERVICE             — declare any foreground service.
+        FOREGROUND_SERVICE_MICROPHONE  — two-way talk captures the parent mic.
+        FOREGROUND_SERVICE_MEDIA_PLAYBACK — continuous remote baby-audio playback.
+      POST_NOTIFICATIONS (declared above for alerts, DMY-42) also covers the
+      service's persistent notification.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!--
       Local-network discovery permissions (DMY-7). Used by react-native-zeroconf
       (Android NSD) so the parent phone can find the baby unit over mDNS/Bonjour
       on the same Wi-Fi WITHOUT scanning a QR code:
@@ -57,5 +74,16 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!--
+        Background-audio foreground service (DMY-23). foregroundServiceType
+        declares BOTH microphone (two-way talk) and mediaPlayback (remote audio)
+        as required on Android 14+; the service is not exported (started only from
+        within the app via AudioForegroundModule).
+      -->
+      <service
+        android:name=".AudioForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="microphone|mediaPlayback" />
     </application>
 </manifest>

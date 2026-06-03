@@ -78,7 +78,7 @@
 
 - WebRTC для P2P видео/аудио (DataChannel + MediaStream)
 - CoreML / TensorFlow Lite для on-device cry detection
-- CallKit (iOS) + ConnectionService (Android) для надёжного background аудио
+- AVAudioSession (iOS) + Foreground Service (Android) для надёжного background аудио
 - Bonjour/mDNS для local discovery
 - Опциональный TURN-сервер на Cloudflare (дёшево)
 - Push: APNS + FCM с VoIP-приоритетом
