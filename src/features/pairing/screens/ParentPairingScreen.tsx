@@ -36,6 +36,8 @@ import { useTheme } from '../../../hooks/useTheme';
 import { logger } from '../../../services/logger';
 import { useAppStore } from '../../../store/useAppStore';
 import ParentMediaView from '../../webrtc/ParentMediaView';
+import { useMediaSession } from '../../webrtc/useMediaSession';
+import { useSignalingTransport } from '../../webrtc/useSignalingTransport';
 import { usePermissions } from '../../onboarding/usePermissions';
 import DiscoveredUnitsList from '../discovery/DiscoveredUnitsList';
 import { useDiscoveredUnits } from '../discovery/useDiscovery';
@@ -74,6 +76,7 @@ function ParentPairingScreen() {
   // established we surface the unified loading state instead of an empty
   // media surface.
   const connectionStatus = useAppStore(s => s.connectionStatus);
+  const pairedSessionId = useAppStore(s => s.pairedSessionId);
   const connecting =
     connectionStatus === 'paired' || connectionStatus === 'connecting';
 
@@ -84,6 +87,24 @@ function ParentPairingScreen() {
   const { units, scanning, settled } = useDiscoveredUnits({
     enabled: hasCamera,
   });
+
+  // DMY-45: dial the paired baby-unit's signalling endpoint. The host/port come
+  // from the discovered unit whose advertised sessionId matches what we paired
+  // with (mDNS, DMY-7); a QR-only pairing with no resolved endpoint leaves this
+  // undefined and the media session stays inert (honest — nothing to dial).
+  const endpoint = useMemo(() => {
+    if (!pairedSessionId) {
+      return null;
+    }
+    const match = units.find(u => u.sessionId === pairedSessionId);
+    return match ? { host: match.host, port: match.port } : null;
+  }, [pairedSessionId, units]);
+
+  // The real signalling transport (parent dials over a WebSocket client) +
+  // the end-to-end media session. Auto-starts from the paired state inside
+  // useSignaling; with no transport the session is inert.
+  const transport = useSignalingTransport({ endpoint });
+  const media = useMediaSession({ transport });
 
   const onSelectDiscovered = useCallback(
     (sessionId: string) => {
@@ -268,7 +289,13 @@ function ParentPairingScreen() {
         ) : null}
 
         <View style={mediaViewStyle}>
-          <ParentMediaView />
+          {/*
+           * DMY-45: feed the live remote video URL + the parent has no outgoing
+           * video, so no controller here (audio-only pause acts on the baby's
+           * sender via its own session). The URL is null until a real video
+           * `ontrack` arrives — ParentMediaView shows the honest placeholder.
+           */}
+          <ParentMediaView remoteStreamUrl={media.remoteStreamUrl} />
         </View>
 
         <TouchableOpacity
