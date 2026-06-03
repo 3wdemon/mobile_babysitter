@@ -15,6 +15,14 @@
  * (the interval never even starts). A clock is injected for deterministic tests;
  * production uses `Date.now`.
  *
+ * FREE_MODE (DMY-51): for the MVP the cap is disabled app-wide via the
+ * {@link FREE_MODE} flag. The cap applies ONLY when `!isPremium && !FREE_MODE`
+ * (`capApplies`). With FREE_MODE on, sessions of any length never accrue toward
+ * the cap, never exhaust, and never surface an upgrade state — WITHOUT touching
+ * `isPremium`, so flipping FREE_MODE=false restores DMY-11 exactly. The flag is
+ * injectable here (`freeMode` option) purely so tests can exercise the
+ * underlying cap with FREE_MODE conceptually off; production reads the constant.
+ *
  * Accuracy across rollover: usage is measured by wall-clock delta between ticks
  * (not tick count), and the pure quota core resets at LOCAL midnight, so a
  * session crossing midnight correctly starts spending the new day's budget.
@@ -22,6 +30,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useAppStore } from '../../store/useAppStore';
+import { FREE_MODE } from './freeMode';
 import {
   FREE_TIER_DAILY_LIMIT_MS,
   isExhausted as quotaIsExhausted,
@@ -46,6 +55,12 @@ export interface UseFreeTierSessionOptions {
   readonly tickMs?: number;
   /** Injectable clock (epoch ms). Defaults to `Date.now`. */
   readonly now?: Clock;
+  /**
+   * Override for the {@link FREE_MODE} flag (DMY-51). Defaults to the module
+   * constant; tests inject `false` to exercise the underlying DMY-11 cap with
+   * FREE_MODE conceptually off. Production never passes this.
+   */
+  readonly freeMode?: boolean;
 }
 
 export interface FreeTierSessionState {
@@ -62,11 +77,22 @@ export interface FreeTierSessionState {
 export function useFreeTierSession(
   options: UseFreeTierSessionOptions,
 ): FreeTierSessionState {
-  const { active, onLimitReached, tickMs = DEFAULT_TICK_MS, now } = options;
+  const {
+    active,
+    onLimitReached,
+    tickMs = DEFAULT_TICK_MS,
+    now,
+    freeMode = FREE_MODE,
+  } = options;
 
   const isPremium = useAppStore(s => s.settings.isPremium);
   const usage = useAppStore(s => s.freeTierUsage);
   const addFreeTierUsage = useAppStore(s => s.addFreeTierUsage);
+
+  // The DMY-11 daily cap applies only to non-premium users AND only while
+  // FREE_MODE (DMY-51) is off. When FREE_MODE is on every feature is free, so
+  // the cap is bypassed entirely — without altering `isPremium` semantics.
+  const capApplies = !isPremium && !freeMode;
 
   const clock = now ?? Date.now;
   // Keep clock + callback in refs so changing them does not restart the timer.
@@ -76,14 +102,16 @@ export function useFreeTierSession(
   onLimitReachedRef.current = onLimitReached;
 
   // Compute exhaustion from the persisted counter (handles local-day rollover).
-  const exhausted = !isPremium && quotaIsExhausted(usage, clock());
+  // Only when the cap actually applies (non-premium AND FREE_MODE off).
+  const exhausted = capApplies && quotaIsExhausted(usage, clock());
 
   // Guard so onLimitReached fires at most once per exhaustion edge.
   const firedRef = useRef(false);
 
   // Fire the soft-interruption callback on the rising edge of `exhausted`.
   useEffect(() => {
-    if (isPremium) {
+    if (!capApplies) {
+      // Premium OR FREE_MODE: no cap, so re-arm and never fire.
       firedRef.current = false;
       return;
     }
@@ -95,11 +123,13 @@ export function useFreeTierSession(
       // Budget became available again (e.g. local-day rollover): re-arm.
       firedRef.current = false;
     }
-  }, [exhausted, isPremium]);
+  }, [exhausted, capApplies]);
 
-  // Tick: accrue wall-clock time while active & free & not yet exhausted.
+  // Tick: accrue wall-clock time while active & the cap applies. When the cap
+  // does not apply (premium or FREE_MODE) the interval never starts, so a
+  // session of any length never accrues toward — or trips — the cap.
   useEffect(() => {
-    if (!active || isPremium) {
+    if (!active || !capApplies) {
       return;
     }
 
@@ -114,11 +144,13 @@ export function useFreeTierSession(
     }, tickMs);
 
     return () => clearInterval(id);
-  }, [active, isPremium, tickMs, addFreeTierUsage]);
+  }, [active, capApplies, tickMs, addFreeTierUsage]);
 
-  const remaining = isPremium
-    ? Number.POSITIVE_INFINITY
-    : quotaRemainingMs(usage, clock());
+  // Remaining is "infinite" whenever the cap does not apply (premium OR
+  // FREE_MODE), otherwise it reflects today's leftover budget.
+  const remaining = capApplies
+    ? quotaRemainingMs(usage, clock())
+    : Number.POSITIVE_INFINITY;
 
   return {
     exhausted,

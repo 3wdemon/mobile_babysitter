@@ -4,6 +4,13 @@
  * The hook is driven by a controllable clock and Jest fake timers, so usage
  * accrual, cap-hit -> onLimitReached, premium bypass and local-day rollover are
  * all deterministic. It reads/writes the real store (MMKV is mocked in-memory).
+ *
+ * REVERSIBILITY (DMY-51): the MVP default `FREE_MODE = true` disables the cap.
+ * To assert the underlying DMY-11 cap behaviour is preserved EXACTLY, every
+ * test here injects `freeMode: false` (FREE_MODE conceptually off, i.e. the
+ * DMY-27 cutover). These cases must keep passing byte-for-byte — they prove
+ * flipping the flag restores the cap unchanged. FREE_MODE-on behaviour is
+ * covered separately in useFreeTierSession.freeMode.test.tsx.
  */
 import { act, renderHook } from '@testing-library/react-native';
 
@@ -50,7 +57,12 @@ describe('useFreeTierSession', () => {
     const clock = makeClock(DAY1_10AM);
 
     const { result } = renderHook(() =>
-      useFreeTierSession({ active: true, now: clock.now, tickMs: 1000 }),
+      useFreeTierSession({
+        active: true,
+        now: clock.now,
+        tickMs: 1000,
+        freeMode: false,
+      }),
     );
 
     act(() => clock.advance(10 * MINUTE));
@@ -74,6 +86,7 @@ describe('useFreeTierSession', () => {
         now: clock.now,
         tickMs: 1000,
         onLimitReached,
+        freeMode: false,
       }),
     );
 
@@ -92,7 +105,12 @@ describe('useFreeTierSession', () => {
     const clock = makeClock(DAY1_10AM);
 
     renderHook(() =>
-      useFreeTierSession({ active: false, now: clock.now, tickMs: 1000 }),
+      useFreeTierSession({
+        active: false,
+        now: clock.now,
+        tickMs: 1000,
+        freeMode: false,
+      }),
     );
 
     act(() => clock.advance(20 * MINUTE));
@@ -110,6 +128,7 @@ describe('useFreeTierSession', () => {
         now: clock.now,
         tickMs: 1000,
         onLimitReached,
+        freeMode: false,
       }),
     );
 
@@ -136,6 +155,7 @@ describe('useFreeTierSession', () => {
           now: clock.now,
           tickMs: 1000,
           onLimitReached,
+          freeMode: false,
         }),
       { initialProps: { active: true } },
     );
@@ -172,6 +192,7 @@ describe('useFreeTierSession', () => {
         now: clock.now,
         tickMs: 1000,
         onLimitReached,
+        freeMode: false,
       }),
     );
 
@@ -192,7 +213,12 @@ describe('useFreeTierSession', () => {
     act(() => useAppStore.getState().addFreeTierUsage(55 * MINUTE));
 
     const { result } = renderHook(() =>
-      useFreeTierSession({ active: true, now: clock.now, tickMs: 1000 }),
+      useFreeTierSession({
+        active: true,
+        now: clock.now,
+        tickMs: 1000,
+        freeMode: false,
+      }),
     );
 
     expect(result.current.remainingMs).toBeLessThanOrEqual(5 * MINUTE);
