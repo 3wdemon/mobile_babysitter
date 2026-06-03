@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
+  boundLockoutOnHydration,
   DEFAULT_LOCKOUT_POLICY,
   registerFailure as registerLockoutFailure,
   registerSuccess as registerLockoutSuccess,
@@ -201,9 +202,21 @@ export const useAppStore = create<AppState>()(
           persisted,
           INITIAL_PERSISTED_STATE,
         );
+        // DMY-44 security: bound a tampered/bit-rotted `lockedUntil` ONCE here,
+        // where the wall clock is available (the schema is intentionally
+        // clock-free). A corrupt finite far-future deadline would otherwise make
+        // the gate report locked forever — an unrecoverable lockout. Clamping to
+        // `now + maxCooldownMs` (the max any legitimate lock can be) lets a stuck
+        // lock self-heal within one cooldown window instead of never.
+        const pinLockout = boundLockoutOnHydration(
+          validated.pinLockout,
+          DEFAULT_LOCKOUT_POLICY,
+          Date.now(),
+        );
         return {
           ...current,
           ...validated,
+          pinLockout,
         };
       },
     },

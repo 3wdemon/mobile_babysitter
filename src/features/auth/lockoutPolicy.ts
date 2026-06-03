@@ -81,24 +81,79 @@ function clampNonNegative(n: number): number {
 }
 
 /**
+ * Small safety margin (ms) added to the `maxCooldownMs` ceiling to absorb benign
+ * clock skew between the process that WROTE `lockedUntil` and the one reading it.
+ */
+const LOCKOUT_CLAMP_MARGIN_MS = 1000;
+
+/**
+ * ONE-TIME hydration repair for a tampered / bit-rotted `lockedUntil` (DMY-44).
+ *
+ * The persisted blob is untrusted. A corrupt FINITE far-future deadline (e.g.
+ * the max JS date `8.64e15`) passes the pure schema's `finite` check yet would
+ * make {@link getLockoutStatus} report `locked:true` for ~275 000 years — an
+ * UNRECOVERABLE lockout, because the only thing that clears a lock is a
+ * successful PIN verify that {@link canAttempt} refuses to run while locked.
+ *
+ * By construction every legitimate lock is `writeClock + cooldownFor(...)` and
+ * every cooldown is clamped to `policy.maxCooldownMs` (see
+ * {@link registerFailure}/{@link cooldownFor}), so no honest lock is ever more
+ * than `maxCooldownMs` ahead of the clock that set it. Therefore any
+ * `lockedUntil` beyond `nowMs + maxCooldownMs (+ margin)` cannot be legitimate:
+ * we cap it to that ceiling.
+ *
+ * Crucially this is applied ONCE at hydration (the clamped value is then
+ * persisted), NOT re-derived on every read — re-anchoring the ceiling to each
+ * read's clock would move it forward forever and never self-heal. Applied once,
+ * a tampered lock self-heals within one `maxCooldownMs` window. The schema
+ * cannot do this (it is intentionally clock-free); the store calls this from its
+ * `merge`, where `Date.now()` is legitimately available. A past, in-range, or
+ * `null` value is returned unchanged.
+ */
+export function boundLockoutOnHydration(
+  state: LockoutState,
+  policy: LockoutPolicy,
+  nowMs: number,
+): LockoutState {
+  if (state.lockedUntil === null) {
+    return state;
+  }
+  const ceiling = nowMs + policy.maxCooldownMs + LOCKOUT_CLAMP_MARGIN_MS;
+  if (state.lockedUntil <= ceiling) {
+    return state;
+  }
+  return { ...state, lockedUntil: ceiling };
+}
+
+/**
  * Derive the live {@link LockoutStatus} from persisted state at `nowMs`.
  *
  * A `lockedUntil` in the past is treated as expired (not locked), so callers do
  * not need to clear it before reading — the next failed/successful transition
  * will normalise the stored value.
+ *
+ * Defense-in-depth: even if an out-of-range `lockedUntil` reaches this read path
+ * (e.g. it was never run through {@link boundLockoutOnHydration}), the reported
+ * `remainingMs`/`lockedUntil` are capped to `nowMs + maxCooldownMs (+ margin)` so
+ * the countdown UI can never display an absurd (year-275760) deadline. The
+ * durable self-heal is the one-time hydration clamp; this read cap is a display
+ * guard.
  */
 export function getLockoutStatus(
   state: LockoutState,
   policy: LockoutPolicy,
   nowMs: number,
 ): LockoutStatus {
-  const locked = state.lockedUntil !== null && state.lockedUntil > nowMs;
-  const remainingMs = locked
-    ? clampNonNegative((state.lockedUntil as number) - nowMs)
-    : 0;
+  const ceiling = nowMs + policy.maxCooldownMs + LOCKOUT_CLAMP_MARGIN_MS;
+  const lockedUntil =
+    state.lockedUntil === null
+      ? null
+      : Math.min(state.lockedUntil, ceiling);
+  const locked = lockedUntil !== null && lockedUntil > nowMs;
+  const remainingMs = locked ? clampNonNegative(lockedUntil - nowMs) : 0;
   return {
     locked,
-    lockedUntil: locked ? state.lockedUntil : null,
+    lockedUntil: locked ? lockedUntil : null,
     remainingMs,
     attemptsRemaining: locked
       ? 0

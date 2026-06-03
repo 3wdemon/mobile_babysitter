@@ -1,6 +1,11 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { createMMKV } from 'react-native-mmkv';
 
+import {
+  boundLockoutOnHydration,
+  DEFAULT_LOCKOUT_POLICY,
+  getLockoutStatus,
+} from '../../features/auth/lockoutPolicy';
 import type { AppState, PersistedState } from '../types';
 import { useAppStore } from '../useAppStore';
 
@@ -525,6 +530,85 @@ describe('useAppStore', () => {
       // failedAttempts is a valid int (kept); lockedUntil repaired to null.
       expect(restored.pinLockout.failedAttempts).toBe(99);
       expect(restored.pinLockout.lockedUntil).toBeNull();
+    });
+
+    // The blocking defect QA found: a corrupt FINITE far-future deadline passes
+    // a plain `z.number().finite()` check. PRE-FIX it hydrated UNCHANGED,
+    // getLockoutStatus reported locked:true essentially forever, submitPin
+    // refused to verify the (correct) PIN, and the lock — which only clears on a
+    // successful verify — could NEVER clear: a permanent, unrecoverable lockout.
+    function hydratePoisonedLock(lockedUntil: number): AppState {
+      const poisoned = {
+        state: {
+          role: null,
+          onboardingCompleted: false,
+          settings: useAppStore.getState().settings,
+          freeTierUsage: { usedMs: 0, dateKey: null },
+          pinLockout: { failedAttempts: 1, lockedUntil, lastFailedAt: null },
+        },
+        version: 0,
+      };
+      seedPersistedRaw(JSON.stringify(poisoned));
+      return restartAndGetState();
+    }
+
+    it('nulls an ABSURD far-future lockedUntil (max JS date 8.64e15) on hydration — no permanent lockout', () => {
+      const restored = hydratePoisonedLock(8.64e15);
+      // Beyond the schema sanity ceiling (~year 5000): dropped to the cleared
+      // default. Cleared is the safest possible outcome — the gate is open.
+      expect(restored.pinLockout.lockedUntil).toBeNull();
+      expect(
+        getLockoutStatus(restored.pinLockout, DEFAULT_LOCKOUT_POLICY, Date.now())
+          .locked,
+      ).toBe(false);
+    });
+
+    it('bounds a FINITE far-future lockedUntil (below schema ceiling) so it self-heals within maxCooldownMs', () => {
+      // A value that survives the coarse schema ceiling but is still far beyond
+      // any legitimate cooldown (~year 2100). The clock-injected store bound
+      // caps it to now + maxCooldownMs so it cannot lock the user out forever.
+      const YEAR_2100_MS = 4_102_444_800_000;
+      const before = Date.now();
+      const restored = hydratePoisonedLock(YEAR_2100_MS);
+      const after = Date.now();
+
+      const ceiling = after + DEFAULT_LOCKOUT_POLICY.maxCooldownMs + 1000;
+      expect(restored.pinLockout.lockedUntil).not.toBeNull();
+      expect(restored.pinLockout.lockedUntil).not.toBe(YEAR_2100_MS);
+      expect(restored.pinLockout.lockedUntil!).toBeLessThanOrEqual(ceiling);
+
+      // Still locked right now (a tampered blob does not unlock the gate), but it
+      // WILL clear on its own once the bounded window elapses — no successful PIN
+      // verify required. That is the anti-permanent-lockout AC.
+      expect(
+        getLockoutStatus(restored.pinLockout, DEFAULT_LOCKOUT_POLICY, before)
+          .locked,
+      ).toBe(true);
+      expect(
+        getLockoutStatus(restored.pinLockout, DEFAULT_LOCKOUT_POLICY, ceiling + 1)
+          .locked,
+      ).toBe(false);
+    });
+
+    it('boundLockoutOnHydration caps a far-future lockedUntil so it self-heals (unit, DMY-44)', () => {
+      const now = 1_700_000_000_000;
+      const bounded = boundLockoutOnHydration(
+        { failedAttempts: 1, lockedUntil: 8.64e15, lastFailedAt: null },
+        DEFAULT_LOCKOUT_POLICY,
+        now,
+      );
+      const ceiling = now + DEFAULT_LOCKOUT_POLICY.maxCooldownMs + 1000;
+      expect(bounded.lockedUntil).toBe(ceiling);
+      // Self-heals: once the clock passes the bounded deadline the gate is open
+      // again, with no successful verify needed.
+      expect(
+        getLockoutStatus(bounded, DEFAULT_LOCKOUT_POLICY, ceiling + 1).locked,
+      ).toBe(false);
+      // A legitimate, in-range lock is left untouched (no false repair).
+      const legit = { failedAttempts: 5, lockedUntil: now + 30_000, lastFailedAt: now };
+      expect(
+        boundLockoutOnHydration(legit, DEFAULT_LOCKOUT_POLICY, now).lockedUntil,
+      ).toBe(now + 30_000);
     });
   });
 

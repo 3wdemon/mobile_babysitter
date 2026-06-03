@@ -1,6 +1,7 @@
 import {
   DEFAULT_LOCKOUT_POLICY,
   EMPTY_LOCKOUT,
+  boundLockoutOnHydration,
   canAttempt,
   getLockoutStatus,
   registerFailure,
@@ -107,6 +108,40 @@ describe('lockoutPolicy (DMY-44)', () => {
       expect(status.remainingMs).toBe(0);
     });
 
+    it('is locked just BEFORE lockedUntil and unlocked AT/after it (boundary)', () => {
+      let state = fresh();
+      state = registerFailure(state, POLICY, T0);
+      state = registerFailure(state, POLICY, T0);
+      state = registerFailure(state, POLICY, T0); // locked until T0 + 1000
+      const until = T0 + POLICY.baseCooldownMs;
+      // t < until -> locked
+      expect(getLockoutStatus(state, POLICY, until - 1).locked).toBe(true);
+      // t === until -> NOT locked (strictly-greater comparison)
+      expect(getLockoutStatus(state, POLICY, until).locked).toBe(false);
+      // t > until -> not locked
+      expect(getLockoutStatus(state, POLICY, until + 1).locked).toBe(false);
+    });
+
+    it('caps the DISPLAYED deadline of a tampered far-future lockedUntil (defense-in-depth)', () => {
+      // A corrupt finite far-future deadline (max JS date) survives the pure
+      // schema's `finite` check. Even if it reaches the read path unbounded, the
+      // status must never SURFACE a ~year-275760 deadline/countdown.
+      const poisoned: LockoutState = {
+        failedAttempts: 99,
+        lockedUntil: 8.64e15, // ~year 275760
+        lastFailedAt: null,
+      };
+      const now = T0;
+      const status = getLockoutStatus(poisoned, POLICY, now);
+      expect(status.locked).toBe(true);
+      expect(status.lockedUntil).not.toBeNull();
+      // Displayed deadline / remaining time capped to now + maxCooldownMs (+skew).
+      expect(status.lockedUntil! - now).toBeLessThanOrEqual(
+        POLICY.maxCooldownMs + 1000,
+      );
+      expect(status.remainingMs).toBeLessThanOrEqual(POLICY.maxCooldownMs + 1000);
+    });
+
     it('reports attemptsRemaining counting down below the threshold', () => {
       let state = fresh();
       expect(getLockoutStatus(state, POLICY, T0).attemptsRemaining).toBe(3);
@@ -125,6 +160,47 @@ describe('lockoutPolicy (DMY-44)', () => {
       expect(canAttempt(state, POLICY, T0)).toBe(false);
       // ...and true again once the cooldown elapses.
       expect(canAttempt(state, POLICY, T0 + 2000)).toBe(true);
+    });
+  });
+
+  describe('boundLockoutOnHydration — anti-permanent-lockout (DMY-44)', () => {
+    it('caps a tampered finite far-future lockedUntil to now + maxCooldownMs (+margin)', () => {
+      const now = T0;
+      const bounded = boundLockoutOnHydration(
+        { failedAttempts: 99, lockedUntil: 8.64e15, lastFailedAt: null },
+        POLICY,
+        now,
+      );
+      expect(bounded.lockedUntil).toBe(now + POLICY.maxCooldownMs + 1000);
+    });
+
+    it('self-heals: the bounded lock clears on its own (no successful verify needed)', () => {
+      const now = T0;
+      const bounded = boundLockoutOnHydration(
+        { failedAttempts: 99, lockedUntil: 8.64e15, lastFailedAt: null },
+        POLICY,
+        now,
+      );
+      // Locked right after hydration...
+      expect(getLockoutStatus(bounded, POLICY, now).locked).toBe(true);
+      // ...but unlocked once the bounded deadline elapses — the crux of the AC.
+      const deadline = bounded.lockedUntil as number;
+      expect(getLockoutStatus(bounded, POLICY, deadline + 1).locked).toBe(false);
+    });
+
+    it('leaves a legitimate in-range lockedUntil untouched (no false repair)', () => {
+      const now = T0;
+      const legit: LockoutState = {
+        failedAttempts: 5,
+        lockedUntil: now + POLICY.baseCooldownMs,
+        lastFailedAt: now,
+      };
+      expect(boundLockoutOnHydration(legit, POLICY, now)).toBe(legit);
+    });
+
+    it('preserves a null (not-locked) lockedUntil', () => {
+      const cleared = { ...EMPTY_LOCKOUT };
+      expect(boundLockoutOnHydration(cleared, POLICY, T0)).toBe(cleared);
     });
   });
 
