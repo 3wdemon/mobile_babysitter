@@ -195,6 +195,7 @@ describe('useAppStore', () => {
       expect(Object.keys(persisted).sort()).toEqual([
         'freeTierUsage',
         'onboardingCompleted',
+        'pinLockout',
         'role',
         'settings',
       ]);
@@ -430,6 +431,8 @@ describe('useAppStore', () => {
         },
         // reset() returns the counter to the empty default (no day stamped).
         freeTierUsage: { usedMs: 0, dateKey: null },
+        // reset() also clears the PIN lockout (DMY-44).
+        pinLockout: { failedAttempts: 0, lockedUntil: null, lastFailedAt: null },
       });
 
       // And a restart after reset rehydrates to defaults, not stale values.
@@ -450,6 +453,78 @@ describe('useAppStore', () => {
         useAppStore.getState().toggleAlertSounds();
       });
       expect(useAppStore.getState().settings.alertSoundsEnabled).toBe(initial);
+    });
+  });
+
+  describe('PIN lockout (DMY-44)', () => {
+    const T = 2_000_000;
+
+    it('defaults to a cleared lockout', () => {
+      expect(useAppStore.getState().pinLockout).toEqual({
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastFailedAt: null,
+      });
+    });
+
+    it('registerPinFailure increments the counter and engages after 5', () => {
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          useAppStore.getState().registerPinFailure(T);
+        }
+      });
+      const { pinLockout } = useAppStore.getState();
+      expect(pinLockout.failedAttempts).toBe(5);
+      // 5th failure (default policy) locks for 30s from T.
+      expect(pinLockout.lockedUntil).toBe(T + 30_000);
+    });
+
+    it('resetPinLockout clears the counter on success', () => {
+      act(() => {
+        useAppStore.getState().registerPinFailure(T);
+        useAppStore.getState().registerPinFailure(T);
+        useAppStore.getState().resetPinLockout();
+      });
+      expect(useAppStore.getState().pinLockout).toEqual({
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastFailedAt: null,
+      });
+    });
+
+    it('survives a simulated restart (persisted) — budget is not reset', () => {
+      act(() => {
+        for (let i = 0; i < 5; i++) {
+          useAppStore.getState().registerPinFailure(T);
+        }
+      });
+      const restored = restartAndGetState();
+      expect(restored.pinLockout.failedAttempts).toBe(5);
+      expect(restored.pinLockout.lockedUntil).toBe(T + 30_000);
+    });
+
+    it('repairs a tampered lockedUntil (e.g. Infinity) on hydration', () => {
+      // Seed a poisoned blob directly: lockedUntil = a non-finite value would
+      // otherwise lock the user out forever. Hydration must repair it.
+      const poisoned = {
+        state: {
+          role: null,
+          onboardingCompleted: false,
+          settings: useAppStore.getState().settings,
+          freeTierUsage: { usedMs: 0, dateKey: null },
+          pinLockout: {
+            failedAttempts: 99,
+            lockedUntil: 'forever',
+            lastFailedAt: null,
+          },
+        },
+        version: 0,
+      };
+      seedPersistedRaw(JSON.stringify(poisoned));
+      const restored = restartAndGetState();
+      // failedAttempts is a valid int (kept); lockedUntil repaired to null.
+      expect(restored.pinLockout.failedAttempts).toBe(99);
+      expect(restored.pinLockout.lockedUntil).toBeNull();
     });
   });
 

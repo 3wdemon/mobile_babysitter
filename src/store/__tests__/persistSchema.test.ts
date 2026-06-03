@@ -20,6 +20,7 @@ const VALID_STATE: PersistedState = {
     playbackVolume: 0.5,
   },
   freeTierUsage: { usedMs: 123_000, dateKey: '2026-06-02' },
+  pinLockout: { failedAttempts: 2, lockedUntil: 1_700_000_000_000, lastFailedAt: 1_699_999_000_000 },
 };
 
 describe('parsePersistedState (DMY-43)', () => {

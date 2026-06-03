@@ -14,6 +14,11 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
+  DEFAULT_LOCKOUT_POLICY,
+  registerFailure as registerLockoutFailure,
+  registerSuccess as registerLockoutSuccess,
+} from '../features/auth/lockoutPolicy';
+import {
   addUsage,
   EMPTY_QUOTA,
   rolloverForToday,
@@ -38,6 +43,7 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
   ...DEFAULT_PERSISTED_STATE,
   settings: { ...DEFAULT_PERSISTED_STATE.settings },
   freeTierUsage: { ...DEFAULT_PERSISTED_STATE.freeTierUsage },
+  pinLockout: { ...DEFAULT_PERSISTED_STATE.pinLockout },
 };
 
 /**
@@ -140,6 +146,18 @@ export const useAppStore = create<AppState>()(
           // Re-stamp to today's local day with a zero counter.
           freeTierUsage: rolloverForToday({ ...EMPTY_QUOTA }, Date.now()),
         })),
+      // DMY-44: parent-mode PIN rate-limit. The timing logic is the pure,
+      // clock-injected `lockoutPolicy`; the store just persists the result so the
+      // attempt budget survives a relaunch.
+      registerPinFailure: nowMs =>
+        set(state => ({
+          pinLockout: registerLockoutFailure(
+            state.pinLockout,
+            DEFAULT_LOCKOUT_POLICY,
+            nowMs,
+          ),
+        })),
+      resetPinLockout: () => set(() => ({ pinLockout: registerLockoutSuccess() })),
       setConnectionStatus: connectionStatus => set({ connectionStatus }),
       // Pairing succeeded (QR scanned + validated). We record the session id and
       // mark `paired`, but the WebRTC handshake is NOT started here — signalling
@@ -164,6 +182,9 @@ export const useAppStore = create<AppState>()(
         // relaunch within the same local day (DMY-11). The stored `dateKey`
         // makes a previous day's usage self-expiring on rollover.
         freeTierUsage: state.freeTierUsage,
+        // Persist the PIN lockout so a wrong-attempt budget / active cooldown is
+        // not reset by relaunching mid-lockout (DMY-44).
+        pinLockout: state.pinLockout,
       }),
       // Hardened merge (DMY-43). The default zustand merge is SHALLOW and trusts
       // the on-disk blob verbatim, so a stale/partial/corrupt value could either

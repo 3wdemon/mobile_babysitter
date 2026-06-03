@@ -63,6 +63,8 @@ export const DEFAULT_PERSISTED_STATE: PersistedState = {
     playbackVolume: 1,
   },
   freeTierUsage: { ...EMPTY_QUOTA },
+  // DMY-44: PIN lockout starts cleared (no failures, not locked).
+  pinLockout: { failedAttempts: 0, lockedUntil: null, lastFailedAt: null },
 };
 
 const DEFAULT_SETTINGS = DEFAULT_PERSISTED_STATE.settings;
@@ -106,6 +108,28 @@ const freeTierUsageSchema: z.ZodType<PersistedState['freeTierUsage']> =
       .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()])
       .catch(EMPTY_QUOTA.dateKey),
   });
+
+/**
+ * Schema for {@link PinLockout} (DMY-44). `failedAttempts` is a finite,
+ * non-negative integer; the two timestamps are finite epoch-ms or `null`.
+ * Each leaf `.catch`es to the cleared default so a tampered/partial value
+ * cannot poison the lockout (e.g. a `lockedUntil` of `Infinity` would otherwise
+ * lock the user out forever).
+ */
+const pinLockoutSchema: z.ZodType<PersistedState['pinLockout']> = z.object({
+  failedAttempts: z
+    .number()
+    .int()
+    .finite()
+    .min(0)
+    .catch(DEFAULT_PERSISTED_STATE.pinLockout.failedAttempts),
+  lockedUntil: z
+    .union([z.number().finite(), z.null()])
+    .catch(DEFAULT_PERSISTED_STATE.pinLockout.lockedUntil),
+  lastFailedAt: z
+    .union([z.number().finite(), z.null()])
+    .catch(DEFAULT_PERSISTED_STATE.pinLockout.lastFailedAt),
+});
 
 /** Role schema: `'baby' | 'parent' | null`. */
 const roleSchema = z.enum(['baby', 'parent']).nullable();
@@ -183,6 +207,11 @@ export function parsePersistedState(
       raw.freeTierUsage,
       defaults.freeTierUsage,
     ),
+    pinLockout: mergeAndParse(
+      pinLockoutSchema,
+      raw.pinLockout,
+      defaults.pinLockout,
+    ),
   };
 }
 
@@ -193,6 +222,7 @@ function cloneDefaults(defaults: PersistedState): PersistedState {
     onboardingCompleted: defaults.onboardingCompleted,
     settings: { ...defaults.settings },
     freeTierUsage: { ...defaults.freeTierUsage },
+    pinLockout: { ...defaults.pinLockout },
   };
 }
 

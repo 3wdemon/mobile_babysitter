@@ -158,6 +158,24 @@ export interface FreeTierUsage {
 }
 
 /**
+ * Persisted lockout/rate-limit state for parent-mode PIN attempts (DMY-44).
+ *
+ * Mirrors `LockoutState` from `features/auth/lockoutPolicy` but is re-declared
+ * here so the store does not depend on the auth module (same pattern as
+ * `ThemePreference`). Persisted so the failed-attempt budget SURVIVES an app
+ * restart — otherwise a relaunch would reset it and defeat the rate-limit.
+ * Contains no PIN material: a counter plus two epoch-ms timestamps.
+ */
+export interface PinLockout {
+  /** Consecutive failed PIN attempts since the last success/reset. */
+  failedAttempts: number;
+  /** Epoch-ms the gate is locked until, or `null` when not locked. */
+  lockedUntil: number | null;
+  /** Epoch-ms of the most recent failed attempt, or `null`. */
+  lastFailedAt: number | null;
+}
+
+/**
  * State that is written to disk via `persist` + `partialize`.
  */
 export interface PersistedState {
@@ -169,6 +187,11 @@ export interface PersistedState {
    * trivially reset by relaunching the app within the same local day.
    */
   freeTierUsage: FreeTierUsage;
+  /**
+   * Parent-mode PIN lockout state (DMY-44). Persisted so the wrong-attempt
+   * budget is not reset by relaunching the app mid-lockout.
+   */
+  pinLockout: PinLockout;
 }
 
 /**
@@ -235,6 +258,14 @@ export interface AppActions {
   addFreeTierUsage: (deltaMs: number) => void;
   /** Reset the free-tier daily usage counter to zero for the current day. */
   resetFreeTierUsage: () => void;
+  /**
+   * Record a FAILED parent-mode PIN attempt at `nowMs` (DMY-44). Increments the
+   * failure counter and engages a backoff/lockout once the threshold is reached
+   * (see `features/auth/lockoutPolicy`). Persisted so it survives a relaunch.
+   */
+  registerPinFailure: (nowMs: number) => void;
+  /** Clear the PIN lockout after a successful unlock (DMY-44). */
+  resetPinLockout: () => void;
   /** Update the ephemeral connection status. */
   setConnectionStatus: (status: ConnectionStatus) => void;
   /**

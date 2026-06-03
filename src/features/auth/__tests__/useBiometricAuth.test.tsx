@@ -7,8 +7,14 @@
  */
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 
+import { useAppStore } from '../../../store/useAppStore';
 import { useBiometricAuth } from '../useBiometricAuth';
+import { DEFAULT_LOCKOUT_POLICY } from '../lockoutPolicy';
 import { setPin } from '../pinService';
+
+const { __resetAllMmkv } = jest.requireMock('react-native-mmkv') as {
+  __resetAllMmkv: () => void;
+};
 
 const bioMock = jest.requireMock('react-native-biometrics') as {
   __resetBiometricsMock: () => void;
@@ -24,6 +30,12 @@ const keychainMock = jest.requireMock('react-native-keychain') as {
 beforeEach(() => {
   bioMock.__resetBiometricsMock();
   keychainMock.__resetKeychainMock();
+  // The hook reads the live app-store singleton (lockout state); reset it so
+  // PIN failures from one test do not bleed into the next.
+  __resetAllMmkv();
+  act(() => {
+    useAppStore.getState().reset();
+  });
 });
 
 describe('useBiometricAuth (DMY-10)', () => {
@@ -154,5 +166,85 @@ describe('useBiometricAuth (DMY-10)', () => {
       await Promise.resolve();
     });
     expect(onUnlocked).not.toHaveBeenCalled();
+  });
+
+  describe('lockout (DMY-44)', () => {
+    /**
+     * Pre-seed N failures via the store action so the (slow, pure-JS PBKDF2)
+     * verify path runs at most once per test, then assert the hook's submitPin
+     * crosses the threshold / is refused. The store is the same singleton the
+     * hook reads.
+     */
+    function seedFailures(n: number): void {
+      act(() => {
+        for (let i = 0; i < n; i++) {
+          useAppStore.getState().registerPinFailure(Date.now());
+        }
+      });
+    }
+
+    it('reports attemptsRemaining and engages lockout when submit crosses the limit', async () => {
+      bioMock.__setSensorAvailable(false);
+      await setPin('4321');
+      const onUnlocked = jest.fn();
+
+      // One short of the limit already on disk.
+      seedFailures(DEFAULT_LOCKOUT_POLICY.maxAttempts - 1);
+
+      const { result } = renderHook(() => useBiometricAuth(onUnlocked));
+      await waitFor(() => expect(result.current.stage).toBe('pin'));
+      expect(result.current.lockout.attemptsRemaining).toBe(1);
+
+      // The final wrong attempt engages the lockout.
+      await act(async () => {
+        await result.current.submitPin('0000');
+      });
+
+      await waitFor(() => expect(result.current.lockout.locked).toBe(true));
+      expect(result.current.lockout.attemptsRemaining).toBe(0);
+      expect(result.current.lockout.remainingMs).toBeGreaterThan(0);
+      expect(onUnlocked).not.toHaveBeenCalled();
+    });
+
+    it('refuses to verify while locked out (does not hit the keychain)', async () => {
+      bioMock.__setSensorAvailable(false);
+      await setPin('4321');
+      const onUnlocked = jest.fn();
+
+      // Already locked on disk.
+      seedFailures(DEFAULT_LOCKOUT_POLICY.maxAttempts);
+
+      const { result } = renderHook(() => useBiometricAuth(onUnlocked));
+      await waitFor(() => expect(result.current.stage).toBe('pin'));
+      expect(result.current.lockout.locked).toBe(true);
+
+      // Even the CORRECT PIN is refused while locked.
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await result.current.submitPin('4321');
+      });
+      expect(ok).toBe(false);
+      expect(onUnlocked).not.toHaveBeenCalled();
+    });
+
+    it('clears the lockout/counter on a successful unlock', async () => {
+      bioMock.__setSensorAvailable(false);
+      await setPin('4321');
+      const onUnlocked = jest.fn();
+
+      // A couple of failures already recorded.
+      seedFailures(2);
+      expect(useAppStore.getState().pinLockout.failedAttempts).toBe(2);
+
+      const { result } = renderHook(() => useBiometricAuth(onUnlocked));
+      await waitFor(() => expect(result.current.stage).toBe('pin'));
+
+      await act(async () => {
+        await result.current.submitPin('4321');
+      });
+      expect(result.current.stage).toBe('unlocked');
+      expect(useAppStore.getState().pinLockout.failedAttempts).toBe(0);
+      expect(useAppStore.getState().pinLockout.lockedUntil).toBeNull();
+    });
   });
 });
