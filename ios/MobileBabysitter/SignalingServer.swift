@@ -302,6 +302,13 @@ final class SignalingServer: RCTEventEmitter {
         case .skip(let rest):
           // Pong / binary / continuation we don't act on — drop and continue.
           acc = rest
+        case .protocolError:
+          // RFC 6455 violation (unmasked client frame, or a fragmented text
+          // frame we don't reassemble): close with 1002 rather than acting on a
+          // partial/unmasked payload, then tear the socket down.
+          self.sendClose(code: 1002, over: connection)
+          connection.cancel()
+          return
         case .invalid:
           connection.cancel()
           return
@@ -328,6 +335,16 @@ final class SignalingServer: RCTEventEmitter {
     connection.send(content: frame, completion: .contentProcessed { _ in })
   }
 
+  /// Send a close frame with a 2-byte status code (server→client is unmasked).
+  private func sendClose(code: UInt16, over connection: NWConnection) {
+    var frame = Data()
+    frame.append(0x88) // FIN + opcode 0x8 (close)
+    let payload = Data([UInt8(code >> 8), UInt8(code & 0xFF)])
+    SignalingServer.appendLength(&frame, payload.count, masked: false)
+    frame.append(payload)
+    connection.send(content: frame, completion: .contentProcessed { _ in })
+  }
+
   private static func appendLength(_ frame: inout Data, _ length: Int, masked: Bool) {
     let maskBit: UInt8 = masked ? 0x80 : 0x00
     if length < 126 {
@@ -351,13 +368,19 @@ final class SignalingServer: RCTEventEmitter {
     case close(rest: Data)
     case ping(Data, rest: Data)
     case skip(rest: Data)
+    /// RFC 6455 violation by the peer (e.g. an unmasked client frame or a
+    /// fragmented text frame). The caller should send a 1002 close and tear down.
+    case protocolError
+    /// Malformed beyond a clean close-code response (e.g. invalid UTF-8 text).
     case invalid
   }
 
-  /// Decode a single client→server frame. Client frames MUST be masked.
+  /// Decode a single client→server frame. Client frames MUST be masked (RFC 6455
+  /// §5.1); a fragmented text frame (FIN=0) is rejected since we don't reassemble.
   private static func decodeFrame(_ data: Data) -> DecodeResult {
     let bytes = [UInt8](data)
     guard bytes.count >= 2 else { return .needMore }
+    let fin = (bytes[0] & 0x80) != 0
     let opcode = bytes[0] & 0x0F
     let masked = (bytes[1] & 0x80) != 0
     var len = Int(bytes[1] & 0x7F)
@@ -372,20 +395,23 @@ final class SignalingServer: RCTEventEmitter {
       for i in 2..<10 { len = (len << 8) | Int(bytes[i]) }
       offset = 10
     }
+    // A client frame that arrives UNMASKED violates RFC 6455 §5.1. Once we have
+    // the length header we know we have enough bytes to make this verdict; close
+    // rather than xor-decode garbage or pass an unmasked payload upward.
+    if !masked { return .protocolError }
     var maskKey: [UInt8] = [0, 0, 0, 0]
-    if masked {
-      guard bytes.count >= offset + 4 else { return .needMore }
-      maskKey = Array(bytes[offset..<offset + 4])
-      offset += 4
-    }
+    guard bytes.count >= offset + 4 else { return .needMore }
+    maskKey = Array(bytes[offset..<offset + 4])
+    offset += 4
     guard bytes.count >= offset + len else { return .needMore }
     var payload = Array(bytes[offset..<offset + len])
-    if masked {
-      for i in 0..<payload.count { payload[i] ^= maskKey[i % 4] }
-    }
+    for i in 0..<payload.count { payload[i] ^= maskKey[i % 4] }
     let rest = data.subdata(in: data.index(data.startIndex, offsetBy: offset + len)..<data.endIndex)
     switch opcode {
     case 0x1: // text
+      // We don't reassemble fragments, so a non-final text frame is a protocol
+      // error rather than a silently-truncated message.
+      guard fin else { return .protocolError }
       guard let text = String(bytes: payload, encoding: .utf8) else { return .invalid }
       return .text(text, rest: rest)
     case 0x8: // close
