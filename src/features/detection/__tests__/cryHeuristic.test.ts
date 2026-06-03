@@ -124,6 +124,30 @@ describe('CryHeuristicDetector', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('continuity timer is NOT cumulative across a gap: a broken stretch restarts and only fires once the POST-gap stretch alone reaches 5s', () => {
+    const detector = createCryHeuristicDetector(CONFIG);
+    // 4s candidate, an out-of-band dip breaks continuity, then 4s candidate
+    // again. If the timer were cumulative (4s + 4s = 8s) this would fire; it
+    // must NOT, because each stretch is < 5s on its own.
+    const noFire = feed(detector, [
+      ...steady(40, 0.75, 0.7, 0), // 4s candidate (ts 0..3900)
+      { rms: 0.1, bandEnergyRatio: 0.3, timestamp: 4000 }, // dip -> resets
+      ...steady(40, 0.75, 0.7, 4100), // 4s candidate again (ts 4100..8000)
+    ]);
+    expect(noFire).toHaveLength(0);
+    // The post-gap stretch, continued PAST 5s on its own clock, fires exactly
+    // once and its timestamp is measured from the gap, not from t=0.
+    const { event } = detector.push({
+      rms: 0.75,
+      bandEnergyRatio: 0.7,
+      timestamp: 9100, // 5s after the post-gap stretch began (4100)
+    });
+    expect(event?.type).toBe('cry');
+    // Episode started at 4100, so firing at >=5s lands at >=9100, never at 5000
+    // (which is what a cumulative-from-zero timer would have produced).
+    expect(event?.timestamp).toBe(9100);
+  });
+
   it('re-arms after a clear gap and fires again for a NEW episode', () => {
     const detector = createCryHeuristicDetector(CONFIG);
     const events = feed(detector, [
