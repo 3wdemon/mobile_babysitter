@@ -91,6 +91,9 @@ describe('SettingsScreen rendering', () => {
     // Switches.
     expect(screen.getByTestId('settings-alert-sounds')).toBeOnTheScreen();
     expect(screen.getByTestId('settings-biometric-lock')).toBeOnTheScreen();
+    // PIN security surface (DMY-44) hosted under Privacy & security.
+    expect(screen.getByTestId('settings-pin')).toBeOnTheScreen();
+    expect(screen.getByTestId('settings-pin-set')).toBeOnTheScreen();
     expect(screen.getByTestId('settings-power-saver')).toBeOnTheScreen();
     expect(screen.getByTestId('settings-audio-only')).toBeOnTheScreen();
     // Sensitivity segmented controls.

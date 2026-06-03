@@ -178,6 +178,28 @@
       "label": "Biometric lock",
       "hint": "Require Face ID / fingerprint or PIN to open parent mode."
     },
+    "security": {
+      "pinLabel": "Unlock PIN",
+      "notSet": "No PIN is set. Set one to use as a fallback when biometrics are unavailable.",
+      "set": "A PIN is set. It's used when biometrics are unavailable or declined.",
+      "legacy": "A PIN is set. It will be upgraded to stronger protection the next time you unlock.",
+      "lockedOut": "Too many wrong attempts. Unlock is locked for {{seconds}}s.",
+      "set2": "Set PIN",
+      "change": "Change PIN",
+      "remove": "Remove PIN",
+      "save": "Save",
+      "cancel": "Cancel",
+      "pinPlaceholder": "Enter PIN",
+      "confirmPlaceholder": "Confirm PIN",
+      "pinInputA11y": "Enter a new PIN",
+      "confirmInputA11y": "Confirm the new PIN",
+      "errors": {
+        "tooShort": "PIN must be at least {{min}} digits.",
+        "mismatch": "PINs do not match.",
+        "invalid": "That PIN isn't valid. Use {{min}}–12 digits.",
+        "saveFailed": "Couldn't save the PIN. Please try again."
+      }
+    },
     "powerSaver": {
       "label": "Baby-unit power saver",
       "hint": "Dim the screen and cut non-essential sensors during a session."

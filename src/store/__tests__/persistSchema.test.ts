@@ -20,6 +20,7 @@ const VALID_STATE: PersistedState = {
     playbackVolume: 0.5,
   },
   freeTierUsage: { usedMs: 123_000, dateKey: '2026-06-02' },
+  pinLockout: { failedAttempts: 2, lockedUntil: 1_700_000_000_000, lastFailedAt: 1_699_999_000_000 },
 };
 
 describe('parsePersistedState (DMY-43)', () => {
@@ -236,6 +237,63 @@ describe('parsePersistedState (DMY-43)', () => {
       });
       expect(result.freeTierUsage.usedMs).toBe(0);
       expect(result.freeTierUsage.dateKey).toBe('2026-06-02');
+    });
+
+    // DMY-44 security: a tampered/bit-rotted pinLockout must never smuggle a
+    // value that produces a permanent lockout. The schema layer (clock-free)
+    // rejects non-finite, negative, and absurd far-future magnitudes; the
+    // precise `now + maxCooldownMs` clamp lives in lockoutPolicy (clock-injected).
+    describe('pinLockout timestamps (DMY-44)', () => {
+      it('repairs a non-finite lockedUntil (Infinity) to the cleared default', () => {
+        const result = parsePersistedState({
+          pinLockout: {
+            failedAttempts: 3,
+            lockedUntil: Number.POSITIVE_INFINITY,
+            lastFailedAt: null,
+          },
+        });
+        expect(result.pinLockout.lockedUntil).toBeNull();
+        expect(result.pinLockout.failedAttempts).toBe(3);
+      });
+
+      it('rejects a NEGATIVE lockedUntil / lastFailedAt', () => {
+        const result = parsePersistedState({
+          pinLockout: {
+            failedAttempts: 1,
+            lockedUntil: -1,
+            lastFailedAt: -123,
+          },
+        });
+        expect(result.pinLockout.lockedUntil).toBeNull();
+        expect(result.pinLockout.lastFailedAt).toBeNull();
+      });
+
+      it('rejects an absurd far-future lockedUntil (max JS date 8.64e15)', () => {
+        // PRE-FIX this passed `z.number().finite()` unchanged (8640000000000000,
+        // ~year 275760) → getLockoutStatus would report locked forever.
+        const result = parsePersistedState({
+          pinLockout: {
+            failedAttempts: 1,
+            lockedUntil: 8.64e15,
+            lastFailedAt: null,
+          },
+        });
+        // Coarse schema ceiling drops the absurd magnitude to the cleared
+        // default; the value can no longer cause a stuck lock.
+        expect(result.pinLockout.lockedUntil).toBeNull();
+      });
+
+      it('keeps a plausible in-range lockedUntil / lastFailedAt', () => {
+        const result = parsePersistedState({
+          pinLockout: {
+            failedAttempts: 2,
+            lockedUntil: 1_700_000_030_000,
+            lastFailedAt: 1_700_000_000_000,
+          },
+        });
+        expect(result.pinLockout.lockedUntil).toBe(1_700_000_030_000);
+        expect(result.pinLockout.lastFailedAt).toBe(1_700_000_000_000);
+      });
     });
 
     // AC1 (DMY-43): a persisted blob whose `settings` is null / missing / a

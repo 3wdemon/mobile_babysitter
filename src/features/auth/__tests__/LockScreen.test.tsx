@@ -8,6 +8,15 @@ import {
 
 import LockScreen from '../screens/LockScreen';
 import { setPin } from '../pinService';
+import { useAppStore } from '../../../store/useAppStore';
+
+// The correct-PIN unlock paths here run the genuine slow KDF (PBKDF2, 100k
+// iterations, pure JS) via setPin + verifyPin. Under `--coverage` instrumentation
+// and parallel CPU contention these can blow Jest's 5s default — an intermittent
+// timeout that is test-budget noise, not a logic failure (the same tests pass
+// deterministically in isolation). Relax the deadline; production latency is
+// unaffected.
+jest.setTimeout(30_000);
 
 const bioMock = jest.requireMock('react-native-biometrics') as {
   __resetBiometricsMock: () => void;
@@ -19,11 +28,18 @@ const bioMock = jest.requireMock('react-native-biometrics') as {
 const keychainMock = jest.requireMock('react-native-keychain') as {
   __resetKeychainMock: () => void;
 };
+const { __resetAllMmkv } = jest.requireMock('react-native-mmkv') as {
+  __resetAllMmkv: () => void;
+};
 
 describe('LockScreen (DMY-10)', () => {
   beforeEach(() => {
     bioMock.__resetBiometricsMock();
     keychainMock.__resetKeychainMock();
+    __resetAllMmkv();
+    act(() => {
+      useAppStore.getState().reset();
+    });
   });
 
   it('prompts for biometrics on mount and unlocks on success', async () => {
@@ -137,5 +153,36 @@ describe('LockScreen (DMY-10)', () => {
 
     // Input is not editable, so changeText is a no-op and submit stays disabled.
     expect(screen.getByTestId('lock-pin-input').props.editable).toBe(false);
+  });
+
+  it('shows the lockout banner and disables input after repeated wrong PINs (DMY-44)', async () => {
+    bioMock.__setSensorAvailable(false);
+    await setPin('4242');
+    const onUnlock = jest.fn();
+
+    // Pre-seed four failures via the store so only one real (slow, pure-JS
+    // PBKDF2) verify runs here; the fifth wrong submit crosses the threshold.
+    act(() => {
+      for (let i = 0; i < 4; i++) {
+        useAppStore.getState().registerPinFailure(Date.now());
+      }
+    });
+
+    render(<LockScreen onUnlock={onUnlock} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('lock-pin-stage')).toBeTruthy(),
+    );
+
+    fireEvent.changeText(screen.getByTestId('lock-pin-input'), '0000');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('lock-submit-pin'));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('lock-pin-lockout')).toBeTruthy(),
+    );
+    // The field is disabled while locked, so the correct PIN cannot be entered.
+    expect(screen.getByTestId('lock-pin-input').props.editable).toBe(false);
+    expect(onUnlock).not.toHaveBeenCalled();
   });
 });

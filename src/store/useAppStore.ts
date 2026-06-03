@@ -14,6 +14,12 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
+  boundLockoutOnHydration,
+  DEFAULT_LOCKOUT_POLICY,
+  registerFailure as registerLockoutFailure,
+  registerSuccess as registerLockoutSuccess,
+} from '../features/auth/lockoutPolicy';
+import {
   addUsage,
   EMPTY_QUOTA,
   rolloverForToday,
@@ -38,6 +44,7 @@ const INITIAL_PERSISTED_STATE: PersistedState = {
   ...DEFAULT_PERSISTED_STATE,
   settings: { ...DEFAULT_PERSISTED_STATE.settings },
   freeTierUsage: { ...DEFAULT_PERSISTED_STATE.freeTierUsage },
+  pinLockout: { ...DEFAULT_PERSISTED_STATE.pinLockout },
 };
 
 /**
@@ -140,6 +147,18 @@ export const useAppStore = create<AppState>()(
           // Re-stamp to today's local day with a zero counter.
           freeTierUsage: rolloverForToday({ ...EMPTY_QUOTA }, Date.now()),
         })),
+      // DMY-44: parent-mode PIN rate-limit. The timing logic is the pure,
+      // clock-injected `lockoutPolicy`; the store just persists the result so the
+      // attempt budget survives a relaunch.
+      registerPinFailure: nowMs =>
+        set(state => ({
+          pinLockout: registerLockoutFailure(
+            state.pinLockout,
+            DEFAULT_LOCKOUT_POLICY,
+            nowMs,
+          ),
+        })),
+      resetPinLockout: () => set(() => ({ pinLockout: registerLockoutSuccess() })),
       setConnectionStatus: connectionStatus => set({ connectionStatus }),
       // Pairing succeeded (QR scanned + validated). We record the session id and
       // mark `paired`, but the WebRTC handshake is NOT started here — signalling
@@ -164,6 +183,9 @@ export const useAppStore = create<AppState>()(
         // relaunch within the same local day (DMY-11). The stored `dateKey`
         // makes a previous day's usage self-expiring on rollover.
         freeTierUsage: state.freeTierUsage,
+        // Persist the PIN lockout so a wrong-attempt budget / active cooldown is
+        // not reset by relaunching mid-lockout (DMY-44).
+        pinLockout: state.pinLockout,
       }),
       // Hardened merge (DMY-43). The default zustand merge is SHALLOW and trusts
       // the on-disk blob verbatim, so a stale/partial/corrupt value could either
@@ -180,9 +202,21 @@ export const useAppStore = create<AppState>()(
           persisted,
           INITIAL_PERSISTED_STATE,
         );
+        // DMY-44 security: bound a tampered/bit-rotted `lockedUntil` ONCE here,
+        // where the wall clock is available (the schema is intentionally
+        // clock-free). A corrupt finite far-future deadline would otherwise make
+        // the gate report locked forever — an unrecoverable lockout. Clamping to
+        // `now + maxCooldownMs` (the max any legitimate lock can be) lets a stuck
+        // lock self-heal within one cooldown window instead of never.
+        const pinLockout = boundLockoutOnHydration(
+          validated.pinLockout,
+          DEFAULT_LOCKOUT_POLICY,
+          Date.now(),
+        );
         return {
           ...current,
           ...validated,
+          pinLockout,
         };
       },
     },

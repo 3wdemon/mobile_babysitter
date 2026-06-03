@@ -63,6 +63,8 @@ export const DEFAULT_PERSISTED_STATE: PersistedState = {
     playbackVolume: 1,
   },
   freeTierUsage: { ...EMPTY_QUOTA },
+  // DMY-44: PIN lockout starts cleared (no failures, not locked).
+  pinLockout: { failedAttempts: 0, lockedUntil: null, lastFailedAt: null },
 };
 
 const DEFAULT_SETTINGS = DEFAULT_PERSISTED_STATE.settings;
@@ -106,6 +108,56 @@ const freeTierUsageSchema: z.ZodType<PersistedState['freeTierUsage']> =
       .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()])
       .catch(EMPTY_QUOTA.dateKey),
   });
+
+/**
+ * Defensible upper bound (epoch-ms) for a persisted timestamp. Any sane real
+ * value — a `lockedUntil` cooldown deadline or a `lastFailedAt` stamp — sits a
+ * few minutes from "now", so a value beyond the year ~5000 is unambiguously
+ * corrupt/tampered. We reject it at the schema (clock-free) layer as a coarse
+ * sanity ceiling. NOTE: this is NOT the security-critical bound — the strict
+ * `lockedUntil <= now + maxCooldownMs` invariant that prevents a permanent
+ * lockout is enforced at READ time in `lockoutPolicy.getLockoutStatus`, where
+ * the clock is injected (this module stays pure/clock-free by design). This
+ * ceiling is only a cheap first line of defence against absurd magnitudes.
+ */
+const MAX_PERSISTED_EPOCH_MS = 95_617_584_000_000; // ~year 5000
+
+/**
+ * A finite, non-negative epoch-ms timestamp within a defensible ceiling, or
+ * `null`. Negative, non-finite, or absurd far-future magnitudes fall back to
+ * the cleared default rather than poisoning the lockout. (DMY-44)
+ */
+const epochMsOrNull = (fallback: number | null) =>
+  z
+    .union([z.number().finite().min(0).max(MAX_PERSISTED_EPOCH_MS), z.null()])
+    .catch(fallback);
+
+/**
+ * Schema for {@link PinLockout} (DMY-44). `failedAttempts` is a finite,
+ * non-negative integer; the two timestamps are finite, non-negative epoch-ms
+ * (within {@link MAX_PERSISTED_EPOCH_MS}) or `null`. Each leaf `.catch`es to the
+ * cleared default so a tampered/partial value cannot poison the lockout (e.g. a
+ * `lockedUntil` of `Infinity` or a negative stamp would otherwise corrupt the
+ * gate).
+ *
+ * IMPORTANT: a FINITE far-future `lockedUntil` (e.g. `8.64e15`, the max JS date)
+ * still satisfies a plain `z.number().finite()`, and would make
+ * `getLockoutStatus` report `locked:true` essentially forever — an
+ * unrecoverable lockout from a corrupt blob. The coarse `.max` here catches the
+ * truly-absurd magnitudes; the precise, security-critical clamp
+ * (`lockedUntil <= now + maxCooldownMs`) lives in `lockoutPolicy.getLockoutStatus`
+ * because it needs the injected clock and this schema is intentionally pure.
+ */
+const pinLockoutSchema: z.ZodType<PersistedState['pinLockout']> = z.object({
+  failedAttempts: z
+    .number()
+    .int()
+    .finite()
+    .min(0)
+    .catch(DEFAULT_PERSISTED_STATE.pinLockout.failedAttempts),
+  lockedUntil: epochMsOrNull(DEFAULT_PERSISTED_STATE.pinLockout.lockedUntil),
+  lastFailedAt: epochMsOrNull(DEFAULT_PERSISTED_STATE.pinLockout.lastFailedAt),
+});
 
 /** Role schema: `'baby' | 'parent' | null`. */
 const roleSchema = z.enum(['baby', 'parent']).nullable();
@@ -183,6 +235,11 @@ export function parsePersistedState(
       raw.freeTierUsage,
       defaults.freeTierUsage,
     ),
+    pinLockout: mergeAndParse(
+      pinLockoutSchema,
+      raw.pinLockout,
+      defaults.pinLockout,
+    ),
   };
 }
 
@@ -193,6 +250,7 @@ function cloneDefaults(defaults: PersistedState): PersistedState {
     onboardingCompleted: defaults.onboardingCompleted,
     settings: { ...defaults.settings },
     freeTierUsage: { ...defaults.freeTierUsage },
+    pinLockout: { ...defaults.pinLockout },
   };
 }
 

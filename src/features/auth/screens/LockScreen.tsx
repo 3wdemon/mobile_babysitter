@@ -38,6 +38,7 @@ function LockScreen({ onUnlock }: LockScreenProps) {
     busy,
     pinConfigured,
     pinError,
+    lockout,
     retryBiometric,
     usePinFallback,
     submitPin,
@@ -45,6 +46,9 @@ function LockScreen({ onUnlock }: LockScreenProps) {
   } = useBiometricAuth(onUnlock);
 
   const [pin, setPin] = useState('');
+
+  // Whole seconds remaining on the lockout, for the countdown copy.
+  const lockoutSeconds = Math.ceil(lockout.remainingMs / 1000);
 
   const onChangePin = (next: string) => {
     // Digits only; bounded length. Clear any prior error on edit.
@@ -64,7 +68,8 @@ function LockScreen({ onUnlock }: LockScreenProps) {
 
   // Precompute the submit button's disabled/opacity so the style object below
   // carries no literal magic value (keeps react-native/no-inline-styles happy).
-  const submitDisabled = !pinConfigured || busy || pin.length === 0;
+  const submitDisabled =
+    !pinConfigured || busy || pin.length === 0 || lockout.locked;
   const submitOpacity = submitDisabled ? 0.5 : 1;
 
   return (
@@ -192,14 +197,28 @@ function LockScreen({ onUnlock }: LockScreenProps) {
               onChangeText={onChangePin}
               keyboardType="number-pad"
               secureTextEntry
-              editable={pinConfigured && !busy}
+              editable={pinConfigured && !busy && !lockout.locked}
               maxLength={MAX_PIN_LENGTH}
               placeholder="••••"
               placeholderTextColor={theme.colors.textMuted}
               onSubmitEditing={onSubmitPin}
             />
 
-            {pinError && (
+            {lockout.locked ? (
+              <Text
+                testID="lock-pin-lockout"
+                accessibilityRole="alert"
+                style={[
+                  styles.error,
+                  {
+                    color: theme.colors.danger,
+                    fontSize: theme.typography.fontSizes.sm,
+                    marginBottom: theme.spacing.sm,
+                  },
+                ]}>
+                {`Too many attempts. Try again in ${lockoutSeconds}s.`}
+              </Text>
+            ) : pinError ? (
               <Text
                 testID="lock-pin-error"
                 style={[
@@ -210,9 +229,13 @@ function LockScreen({ onUnlock }: LockScreenProps) {
                     marginBottom: theme.spacing.sm,
                   },
                 ]}>
-                Incorrect PIN. Try again.
+                {lockout.attemptsRemaining > 0
+                  ? `Incorrect PIN. ${lockout.attemptsRemaining} attempt${
+                      lockout.attemptsRemaining === 1 ? '' : 's'
+                    } left.`
+                  : 'Incorrect PIN. Try again.'}
               </Text>
-            )}
+            ) : null}
 
             <TouchableOpacity
               accessibilityRole="button"

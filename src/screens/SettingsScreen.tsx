@@ -48,6 +48,7 @@ import {
   View,
 } from 'react-native';
 
+import PinSettings from '../features/auth/PinSettings';
 import PermissionReRequest from '../features/onboarding/PermissionReRequest';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
@@ -423,6 +424,9 @@ function SettingsScreen({ navigation }: RootStackScreenProps<'Settings'>) {
         onValueChange={setBiometricLockEnabled}
         theme={theme}
       />
+      {/* PIN set/change/remove + lockout state (DMY-44). Self-contained, like
+          PermissionReRequest, so the screen stays declarative. */}
+      <PinSettings />
 
       {/* Power */}
       <Section title={t('settings.sections.power')} theme={theme} />
