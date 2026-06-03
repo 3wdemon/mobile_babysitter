@@ -99,6 +99,19 @@ export type {
   AudioSession,
 } from './audioPlayback';
 
+// --- iOS background audio session: AVAudioSession, no CallKit/PushKit (DMY-48) -
+// $0 alternative to DMY-22: a .playAndRecord/.voiceChat AVAudioSession (Swift
+// AudioSessionModule) + UIBackgroundModes:['audio'] keeps remote audio playing
+// with the screen locked WITHOUT a paid VoIP entitlement. start() activates the
+// session, stop() deactivates it; on Android / under Jest the native module is
+// absent and this degrades to a safe no-op.
+export {
+  createIosAudioPlayback,
+  createIosAudioSessionPlayback,
+  resolveAudioSessionModule,
+} from './iosAudioPlayback';
+export type { AudioSessionNativeModule } from './iosAudioPlayback';
+
 // --- Two-way talk: parent→baby push-to-talk + echo cancellation (DMY-20) -----
 // The parent captures its own mic with native echo cancellation (TALK_AUDIO_
 // CONSTRAINTS: echoCancellation/noiseSuppression/autoGainControl) and publishes
