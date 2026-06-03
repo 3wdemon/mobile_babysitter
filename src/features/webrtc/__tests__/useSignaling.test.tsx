@@ -387,4 +387,271 @@ describe('useSignaling', () => {
       expect(result.current.guidanceMessage).toBeNull();
     });
   });
+
+  describe('auto-reconnect with backoff (DMY-61)', () => {
+    /** Deterministic scheduler + fixed RNG injected via `reconnectTimer`. */
+    function fakeReconnectTimer(): {
+      setTimer: (cb: () => void, ms: number) => unknown;
+      clearTimer: (h: unknown) => void;
+      fire: () => void;
+      armed: () => boolean;
+      lastDelay: () => number | null;
+      rng: () => number;
+    } {
+      const pending = new Map<number, () => void>();
+      let next = 1;
+      let lastDelay: number | null = null;
+      return {
+        setTimer: (cb, ms) => {
+          const h = next++;
+          lastDelay = ms;
+          pending.set(h, cb);
+          return h;
+        },
+        clearTimer: h => {
+          pending.delete(h as number);
+        },
+        fire: () => {
+          const snap = [...pending.values()];
+          pending.clear();
+          for (const cb of snap) cb();
+        },
+        armed: () => pending.size > 0,
+        lastDelay: () => lastDelay,
+        rng: () => 0,
+      };
+    }
+
+    it('on an unclean disconnected after connected, retries with exponential backoff then connects (resets + banner hidden)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-1');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      // Reach a live connection first.
+      act(() => pc.emitState('connected'));
+      expect(result.current.status).toBe('connected');
+      expect(result.current.reconnecting).toBe(false);
+
+      // Unclean drop → backoff scheduled at the base 1s, banner shows attempt 1.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(true);
+      expect(result.current.reconnectAttempt).toBe(1);
+      expect(rc.lastDelay()).toBe(1000);
+
+      // The backoff tick re-runs the connect path on a fresh session.
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      expect(result.current.reconnecting).toBe(true);
+
+      // The reconnect succeeds: backoff resets, banner hidden, status connected.
+      act(() => pc.emitState('connected'));
+      expect(result.current.status).toBe('connected');
+      expect(result.current.reconnecting).toBe(false);
+      expect(result.current.reconnectAttempt).toBe(0);
+      expect(result.current.reconnectFailed).toBe(false);
+    });
+
+    it('exhausts max attempts → stops retrying, marks failed, manual retry() re-attempts', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-2');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectPolicy: {
+            baseMs: 1000,
+            maxDelayMs: 30_000,
+            maxAttempts: 2,
+            jitterRatio: 0,
+          },
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      act(() => pc.emitState('connected'));
+
+      // First unclean drop → schedule attempt 0.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(true);
+
+      // Attempt 1 fires and fails again → schedule attempt 1.
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      act(() => pc.emitState('failed'));
+      expect(result.current.reconnecting).toBe(true);
+
+      // Attempt 2 fires and fails → past the cap (2) → STOP, mark failed.
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      act(() => pc.emitState('failed'));
+      expect(result.current.reconnectFailed).toBe(true);
+      expect(result.current.reconnecting).toBe(false);
+      // No more timers scheduled — no infinite loop.
+      expect(rc.armed()).toBe(false);
+
+      // Manual retry re-arms the burst from the base delay.
+      act(() => result.current.retry());
+      expect(result.current.reconnectFailed).toBe(false);
+      expect(result.current.reconnecting).toBe(true);
+      expect(result.current.reconnectAttempt).toBe(1);
+      expect(rc.lastDelay()).toBe(1000);
+      await act(async () => {
+        rc.fire();
+        await Promise.resolve();
+      });
+      // The retry attempt then connects.
+      act(() => pc.emitState('connected'));
+      expect(result.current.reconnecting).toBe(false);
+    });
+
+    it('does NOT reconnect on a clean local stop() (no backoff scheduled)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-3');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          autoStart: false,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      act(() => result.current.start());
+      await flush();
+      act(() => pc.emitState('connected'));
+
+      // A clean local stop must NOT trigger reconnect even though teardown can
+      // surface a disconnected-like state — this is the DMY-45 boundary at this
+      // layer (local stop = clean; remote `bye` wiring lands in DMY-45).
+      act(() => result.current.stop());
+      expect(result.current.reconnecting).toBe(false);
+      expect(rc.armed()).toBe(false);
+      // A late stray peer event after stop must not resurrect a reconnect.
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(false);
+      expect(rc.armed()).toBe(false);
+    });
+
+    it('cancels any pending reconnect on unmount (no leak / no setState past teardown)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-4');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result, unmount } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      act(() => pc.emitState('connected'));
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(true);
+      expect(rc.armed()).toBe(true);
+
+      unmount();
+      // Timer cancelled on unmount; firing it does not throw / setState.
+      expect(rc.armed()).toBe(false);
+      expect(() => act(() => rc.fire())).not.toThrow();
+    });
+
+    it('a never-connected initial failure does NOT trigger reconnect', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-5');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      // Never reached connected → a handshake failure is not a reconnect.
+      act(() => pc.emitState('failed'));
+      expect(result.current.reconnecting).toBe(false);
+      expect(rc.armed()).toBe(false);
+    });
+
+    it('respects autoReconnect=false (no backoff on an unclean drop)', async () => {
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-rc-6');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const rc = fakeReconnectTimer();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          autoReconnect: false,
+          reconnectTimer: {
+            setTimer: rc.setTimer,
+            clearTimer: rc.clearTimer,
+            rng: rc.rng,
+          },
+        }),
+      );
+      await flush();
+      act(() => pc.emitState('connected'));
+      act(() => pc.emitState('disconnected'));
+      expect(result.current.reconnecting).toBe(false);
+      expect(rc.armed()).toBe(false);
+    });
+  });
 });
