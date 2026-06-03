@@ -40,6 +40,7 @@ import {
 import { createSignalingSession, SignalingSession } from './signalingSession';
 import type { SignalingSessionStatus } from './signalingSession';
 import type {
+  DataChannel,
   PeerConnection,
   PeerConnectionConfig,
   PeerConnectionFactory,
@@ -78,6 +79,14 @@ export interface UseSignalingOptions {
    * Awaited inside the session so capture completes before negotiation.
    */
   readonly onPeerConnection?: (pc: PeerConnection) => void | Promise<void>;
+  /**
+   * Alert data channel seam (DMY-71). Forwarded to the {@link SignalingSession}:
+   * the session owns the channel lifecycle (the baby opens it pre-answer; the
+   * parent receives it via `datachannel`) and hands the ready channel here. The
+   * caller binds it to the alerts feature (parent: `receiveAlertsFromChannel`;
+   * baby: `pushAlertsToChannel`) and may return a cleanup detached on teardown.
+   */
+  readonly onAlertChannel?: (channel: DataChannel) => (() => void) | void;
   /**
    * Auto-start the handshake when paired + a transport is present. Defaults to
    * `true`. Set `false` to drive `start`/`stop` manually.
@@ -217,6 +226,7 @@ export function useSignaling(
     onRemoteTrack,
     onLocalDescription,
     onPeerConnection,
+    onAlertChannel,
     autoStart = true,
     iceTimer,
     autoReconnect = true,
@@ -277,6 +287,8 @@ export function useSignaling(
   onLocalDescriptionRef.current = onLocalDescription;
   const onPeerConnectionRef = useRef(onPeerConnection);
   onPeerConnectionRef.current = onPeerConnection;
+  const onAlertChannelRef = useRef(onAlertChannel);
+  onAlertChannelRef.current = onAlertChannel;
   const roleRef = useRef(role);
   roleRef.current = role;
   const transportRef = useRef(transport);
@@ -362,6 +374,8 @@ export function useSignaling(
         onLocalDescriptionRef.current?.(description),
       onPeerConnection: (pc: PeerConnection) =>
         onPeerConnectionRef.current?.(pc),
+      onAlertChannel: (channel: DataChannel) =>
+        onAlertChannelRef.current?.(channel),
     });
     sessionRef.current = session;
     setIsActive(true);

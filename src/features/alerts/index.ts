@@ -64,10 +64,12 @@ export {
   parseAlert,
   sendAlertOverChannel,
   receiveAlertsFromChannel,
+  pushAlertsToChannel,
 } from './alertChannel';
 export type {
   AlertChannelMessage,
   AlertChannelReceiverOptions,
+  AlertChannelSource,
 } from './alertChannel';
 
 export { default as LastAlertIndicator } from './LastAlertIndicator';

@@ -141,6 +141,49 @@ export function sendAlertOverChannel(
   return sent;
 }
 
+/**
+ * Baby-side SOURCE seam for the live datachannel wiring (DMY-71).
+ *
+ * The signalling session, on the baby (responder), opens the alert channel and
+ * needs a stream of raised {@link AlertEvent}s to push over it. Rather than
+ * coupling the session to a concrete detector, it consumes THIS minimal
+ * subscription: `subscribe(handler)` registers a listener for raised alerts and
+ * returns an unsubscribe. The real producer is the alert pipeline
+ * (cry detection DMY-49 / motion DMY-25 → {@link AlertService}); until that
+ * detector is exposed as a stream, callers pass a source they drive themselves
+ * (or omit it — then the channel is opened but nothing is pushed yet).
+ *
+ * Privacy: the handler only ever receives an {@link AlertEvent} (type+timestamp);
+ * the serializer further projects to `{type,timestamp}` on the wire.
+ */
+export interface AlertChannelSource {
+  /**
+   * Register a listener for raised alerts. Returns an unsubscribe. The session
+   * calls this once when the channel opens and unsubscribes on teardown.
+   */
+  subscribe(handler: (event: AlertEvent) => void): () => void;
+}
+
+/**
+ * Wire a baby-side {@link AlertChannelSource} to an open alert {@link DataChannel}:
+ * every raised {@link AlertEvent} is pushed over the channel via
+ * {@link sendAlertOverChannel} (DMY-71). Returns an unsubscribe that detaches the
+ * source listener (the channel itself is owned/closed elsewhere). A `null`
+ * channel is a no-op subscription (alerts-over-datachannel unavailable).
+ */
+export function pushAlertsToChannel(
+  channel: DataChannel | null,
+  source: AlertChannelSource,
+): () => void {
+  if (!channel) {
+    // Data channels unavailable on this connection: subscribe to nothing.
+    return () => {};
+  }
+  return source.subscribe(event => {
+    sendAlertOverChannel(channel, event);
+  });
+}
+
 /** Sinks the parent drives when a valid alert arrives over the channel. */
 export interface AlertChannelReceiverOptions {
   /**
