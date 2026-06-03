@@ -11,5 +11,13 @@
   // by tsconfig.node.json (which supplies Node globals) and excluded here so
   // the app program stays free of Node types — see tsconfig.node.json.
   // tests/detox is type-checked by tests/detox/tsconfig.json (Detox types).
-  "exclude": ["**/node_modules", "**/Pods", "*.config.ts", "tests/detox"]
+  // tests/e2e is type-checked by tests/e2e/tsconfig.json (Node + DOM libs for
+  // Playwright specs) so its browser/Node globals stay out of the app program.
+  "exclude": [
+    "**/node_modules",
+    "**/Pods",
+    "*.config.ts",
+    "tests/detox",
+    "tests/e2e"
+  ]
 }

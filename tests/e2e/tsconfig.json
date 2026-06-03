@@ -1,0 +1,18 @@
+{
+  // Type-check the Playwright e2e specs as a separate program (mirrors how
+  // tests/detox owns its own tsconfig). These specs run in Playwright's Node
+  // runtime — they need Node globals + the DOM lib (page.evaluate bodies run in
+  // the browser and reference `window`/`document`) — neither of which the app
+  // program (root tsconfig, RN runtime) should see. The root tsconfig excludes
+  // tests/e2e so the two programs never type each other's globals.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["es2022", "dom"],
+    "noEmit": true
+  },
+  // Override the inherited root exclude (which lists tests/e2e) so this program
+  // can actually see its own specs.
+  "exclude": ["**/node_modules", "**/Pods"],
+  "include": ["**/*.ts", "globals.d.ts"]
+}

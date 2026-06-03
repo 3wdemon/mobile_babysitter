@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+  <!--
+    Onboarding e2e harness (DMY-67).
+
+    WHY THIS FILE EXISTS
+    --------------------
+    Mobile Babysitter is a BARE React Native app: there is no react-native-web
+    build, no web entry, no DOM bundle. The Playwright skeleton (DMY-39) only
+    wired the runner + config; it never stood up a real web target (its
+    `baseURL` is an env placeholder and its smoke test touches no app code).
+    Standing up a full RN-web target (bundler + AppRegistry + DOM render of the
+    @react-navigation stack) is far outside a 2pt test task and would invent a
+    new web stack — explicitly out of scope per CLAUDE.md.
+
+    So this harness is the HONEST option (b) from the task brief: a minimal,
+    self-contained page that mirrors the onboarding flow's *contract* —
+      * the exact step order Welcome -> Permissions -> RoleSelect
+        (= OnboardingNavigator.tsx),
+      * the real user-facing copy, loaded at runtime from the real source of
+        truth locales/en.json (NOT hand-copied here, so it can't silently
+        drift from the app), and
+      * the permission seam from usePermissions.ts: a single injectable
+        `requestPermissions` action that NEVER hits a real native/browser
+        permission API and never blocks the flow.
+
+    KNOWN GAP (documented in the spec + PR): this drives a faithful DOM
+    reconstruction of the flow, not the compiled RN components. When a real
+    RN-web (or Detox) target lands, these scenarios should be re-pointed at it.
+    The DOM contract here (testids, step order, permission seam, completion
+    signal) is deliberately kept 1:1 with the RN screens so that migration is
+    mechanical.
+
+    The real locales/en.json is inlined by the spec (replacing the placeholder
+    token in the first script below) before the page loads, so the harness
+    renders the very same copy the app ships — no fetch, no network.
+  -->
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Onboarding e2e harness</title>
+  </head>
+  <body>
+    <div id="root" data-testid="onboarding-root">
+      <p data-testid="harness-loading">Loading…</p>
+    </div>
+
+    <!-- The spec replaces the placeholder token below with the real
+         locales/en.json before loading the page, so the harness renders the
+         actual shipped copy. This runs before the main script below, so
+         window.__catalog is ready. -->
+    <script>
+      window.__catalog = __CATALOG_JSON__;
+    </script>
+
+    <!-- Plain (non-module) script so it executes synchronously when the spec
+         loads the page via setContent. No imports / top-level await are used. -->
+    <script>
+      // ---- Permission seam --------------------------------------------------
+      // Mirrors usePermissions.request(): resolves to per-permission statuses
+      // and NEVER throws / NEVER blocks. Tests can override the resolver via
+      // window.__setPermissionResolver before driving the Permissions step, so
+      // permissions are deterministic and no real prompt ever fires.
+      const APP_PERMISSIONS = ['camera', 'microphone', 'notifications'];
+      let permissionResolver = () => ({
+        camera: 'granted',
+        microphone: 'granted',
+        notifications: 'granted',
+      });
+      window.__setPermissionResolver = fn => {
+        permissionResolver = fn;
+      };
+      // Records that a request happened + with what result, so the spec can
+      // assert the seam was driven (analog of the jest mock call-count checks).
+      window.__permissionRequests = [];
+      async function requestPermissions() {
+        // Intentionally async to model the native round-trip without any real
+        // API. No prompt, no navigator.permissions, no getUserMedia.
+        const statuses = permissionResolver();
+        window.__permissionRequests.push(statuses);
+        return statuses;
+      }
+
+      // ---- Completion signal -------------------------------------------------
+      // Analog of useAppStore.setRole + completeOnboarding. The spec reads this
+      // to assert the role is reflected and onboarding completed.
+      window.__onboardingState = { role: null, onboardingCompleted: false };
+      function completeOnboarding(role) {
+        window.__onboardingState = { role, onboardingCompleted: true };
+        document
+          .getElementById('root')
+          .setAttribute('data-onboarding-complete', 'true');
+        document.getElementById('root').setAttribute('data-role', role);
+      }
+
+      // ---- Catalog (real source of truth) -----------------------------------
+      // The spec inlines the real locales/en.json onto window.__catalog in the
+      // script above (which runs first), so the page never fetches over the
+      // network and stays fully deterministic.
+      const catalog = window.__catalog;
+      // i18n-js style key lookup against the real en.json onboarding tree.
+      const t = key =>
+        key
+          .split('.')
+          .reduce((acc, part) => (acc == null ? acc : acc[part]), catalog);
+
+      const root = document.getElementById('root');
+      function clear() {
+        root.innerHTML = '';
+      }
+      function el(tag, attrs = {}, text) {
+        const node = document.createElement(tag);
+        Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      // ---- Step renderers ----------------------------------------------------
+      // Each step mirrors the corresponding RN screen's structure: a header,
+      // its primary action, and stable testids matching the RN testID contract.
+      function renderWelcome() {
+        clear();
+        root.setAttribute('data-step', 'welcome');
+        root.appendChild(
+          el(
+            'h1',
+            { 'data-testid': 'welcome-title' },
+            t('onboarding.welcome.title'),
+          ),
+        );
+        root.appendChild(el('p', {}, t('onboarding.welcome.subtitle')));
+        ['p2p', 'noCloud', 'e2e'].forEach(k => {
+          root.appendChild(
+            el('h2', {}, t(`onboarding.welcome.highlights.${k}.title`)),
+          );
+        });
+        const cont = el(
+          'button',
+          { 'data-testid': 'welcome-continue' },
+          t('onboarding.welcome.continue'),
+        );
+        cont.addEventListener('click', renderPermissions);
+        root.appendChild(cont);
+      }
+
+      function renderPermissions() {
+        clear();
+        root.setAttribute('data-step', 'permissions');
+        root.appendChild(
+          el(
+            'h1',
+            { 'data-testid': 'permissions-title' },
+            t('onboarding.permissions.title'),
+          ),
+        );
+        APP_PERMISSIONS.forEach(k => {
+          root.appendChild(
+            el('h2', {}, t(`onboarding.permissions.items.${k}.title`)),
+          );
+        });
+
+        const statusList = el('ul', { 'data-testid': 'permission-statuses' });
+        root.appendChild(statusList);
+
+        const allow = el(
+          'button',
+          { 'data-testid': 'permissions-allow' },
+          t('onboarding.permissions.allowAccess'),
+        );
+        allow.addEventListener('click', async () => {
+          allow.disabled = true;
+          allow.textContent = t('onboarding.permissions.requesting');
+          const statuses = await requestPermissions();
+          // Surface per-permission status inline (analog of the RN status label)
+          // then swap the primary action to Continue -> RoleSelect.
+          statusList.innerHTML = '';
+          APP_PERMISSIONS.forEach(k => {
+            statusList.appendChild(
+              el(
+                'li',
+                { 'data-testid': `permission-status-${k}` },
+                t(`onboarding.permissions.status.${statuses[k]}`),
+              ),
+            );
+          });
+          allow.remove();
+          skip.remove();
+          const cont = el(
+            'button',
+            { 'data-testid': 'permissions-continue' },
+            t('onboarding.permissions.continue'),
+          );
+          cont.addEventListener('click', renderRoleSelect);
+          root.appendChild(cont);
+        });
+        root.appendChild(allow);
+
+        // Skip seam (analog of RN "Skip for now"): advances WITHOUT requesting.
+        const skip = el(
+          'button',
+          { 'data-testid': 'permissions-skip' },
+          t('onboarding.permissions.skip'),
+        );
+        skip.addEventListener('click', renderRoleSelect);
+        root.appendChild(skip);
+      }
+
+      function renderRoleSelect() {
+        clear();
+        root.setAttribute('data-step', 'role-select');
+        root.appendChild(
+          el(
+            'h1',
+            { 'data-testid': 'role-select-title' },
+            t('onboarding.roleSelect.title'),
+          ),
+        );
+        ['baby', 'parent'].forEach(role => {
+          const card = el(
+            'button',
+            { 'data-testid': `role-option-${role}` },
+            t(`onboarding.roleSelect.options.${role}.title`),
+          );
+          card.addEventListener('click', () => completeOnboarding(role));
+          root.appendChild(card);
+        });
+      }
+
+      // Fresh app state always starts at Welcome (RootNavigator gates on
+      // onboardingCompleted === false).
+      window.__startOnboarding = renderWelcome;
+      renderWelcome();
+    </script>
+  </body>
+</html>

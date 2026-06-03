@@ -107,6 +107,9 @@ jobs:
       - name: Typecheck (Detox E2E program)
         run: npx tsc -p tests/detox/tsconfig.json --noEmit
 
+      - name: Typecheck (Playwright E2E program)
+        run: npx tsc -p tests/e2e/tsconfig.json --noEmit
+
   # --- Unit tests ----------------------------------------------------------
   test:
     name: Unit tests (Jest)
