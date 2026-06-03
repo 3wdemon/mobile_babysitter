@@ -81,11 +81,37 @@ describe('normalizePeerState', () => {
 });
 
 describe('createPeerConnection', () => {
-  it('passes default (empty) ICE servers to the native ctor', () => {
+  it('defaults to public Google STUN (primary + fallback) — DMY-47', () => {
+    // The two public Google STUN endpoints: primary + fallback.
+    expect(DEFAULT_ICE_SERVERS).toEqual([
+      {
+        urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'],
+      },
+    ]);
+    const urls = DEFAULT_ICE_SERVERS.flatMap(s =>
+      Array.isArray(s.urls) ? s.urls : [s.urls],
+    );
+    expect(urls).toContain('stun:stun.l.google.com:19302');
+    expect(urls).toContain('stun:stun1.l.google.com:19302');
+    // STUN-only / $0 mode: NO TURN credentials are configured here (DMY-19).
+    expect(
+      DEFAULT_ICE_SERVERS.some(s => s.username || s.credential),
+    ).toBe(false);
+  });
+
+  it('passes the default STUN ICE servers to the native ctor', () => {
     const { Ctor, instances } = makeCtor();
     createPeerConnection(undefined, Ctor);
-    expect(instances[0].created).toEqual({ iceServers: [] });
-    expect(DEFAULT_ICE_SERVERS).toEqual([]);
+    expect(instances[0].created).toEqual({
+      iceServers: [
+        {
+          urls: [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
+          ],
+        },
+      ],
+    });
   });
 
   it('forwards configured ICE servers', () => {

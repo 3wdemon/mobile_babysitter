@@ -243,14 +243,27 @@ export type PeerConnectionFactory = (
 /**
  * ICE configuration for the peer connection.
  *
- * For local P2P on the same Wi-Fi the host candidates are enough, so the default
- * `iceServers` is EMPTY. A public STUN placeholder can be enabled for the
- * local-network-with-NAT case, but TURN relay (for the cellular/internet
- * fallback) is explicitly OUT OF SCOPE here — that is DMY-19. We do not add any
- * TURN credentials in this issue.
+ * Defaults (`DEFAULT_ICE_SERVERS`) are public Google STUN ONLY — the $0,
+ * privacy-first mode (DMY-47). Rationale:
+ *  - Host candidates cover same-Wi-Fi P2P; STUN adds the server-reflexive
+ *    (public) address so most home NATs traverse without any paid infrastructure.
+ *  - STUN never relays media — the two phones still talk peer-to-peer — so no
+ *    third party ever sees the stream. This is why STUN, unlike TURN, fits the
+ *    privacy stance.
+ *  - The case STUN cannot solve is SYMMETRIC NAT on both ends: ICE may then never
+ *    reach `connected`. Rather than hang silently, the signalling layer arms a
+ *    timeout (DMY-47) and surfaces user guidance ("check Wi-Fi / restart").
+ *  - TURN relay — the paid option that also defeats symmetric NAT — is DMY-19 and
+ *    is deliberately NOT configured here. No TURN credentials live in this code.
+ *
+ * `iceServers` is overridable so a future TURN-enabled build (DMY-19) or a test
+ * can inject its own list.
  */
 export interface PeerConnectionConfig {
-  /** ICE servers (STUN/TURN). Defaults to none — see {@link DEFAULT_ICE_SERVERS}. */
+  /**
+   * ICE servers (STUN/TURN). Defaults to public Google STUN only — see
+   * {@link DEFAULT_ICE_SERVERS}. No TURN here (DMY-19).
+   */
   readonly iceServers?: readonly RtcIceServer[];
 }
 
