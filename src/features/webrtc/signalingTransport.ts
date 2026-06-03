@@ -9,17 +9,18 @@
  *     other's `onMessage` (asynchronously, like a real channel), with no network
  *     at all. This is what lets the full initiator↔responder handshake be
  *     exercised under Jest.
- *   - {@link createLocalSocketTransport} — the INTEGRATION POINT for the real
- *     local socket transport. It is intentionally a stub in this issue (it
- *     throws): wiring a real WebSocket/TCP listener on the baby-unit's
- *     mDNS-advertised `host:port` (DMY-7) is a follow-up. The seam is defined so
- *     it can be swapped in without touching the state machine.
+ *   - {@link createLocalSocketTransport} — the REAL local socket transport
+ *     (DMY-45), re-exported from `socketSignalingTransport.ts`. The parent
+ *     (initiator) dials `ws://host:port` (the baby-unit's mDNS-advertised
+ *     endpoint, DMY-7) with the RN built-in WebSocket client; the baby
+ *     (responder) listen side is an injectable native seam (no JS WS server in
+ *     RN). Both factories are injectable so the transport is unit-testable.
  *
  * ## Honest scope
- * Only the loopback transport is functional in this issue. End-to-end signalling
- * between two physical devices requires the real socket transport AND two
- * devices on a network — that is a manual / follow-up milestone, not something
- * this issue can verify in CI.
+ * The loopback transport and the parent (dial) socket transport are functional.
+ * Two physical devices actually exchanging signalling requires the baby-unit's
+ * native LISTEN seam AND two devices on a network — that listen side + the live
+ * exchange are the remaining device milestone, not something CI can verify.
  *
  * ## Privacy
  * The transport carries SDP/ICE (sensitive network metadata). It performs NO
@@ -139,38 +140,17 @@ export function createLoopbackTransportPair(): {
   return { a, b };
 }
 
-/**
- * Parameters for the (future) real local socket transport.
- *
- * The baby-unit's `host`/`port` are surfaced by mDNS discovery (DMY-7); the
- * `sessionId` scopes the signalling exchange. `role` decides whether this
- * endpoint listens (baby) or dials (parent) — both out of scope here.
- */
-export interface LocalSocketTransportConfig {
-  readonly host: string;
-  readonly port: number;
-  readonly sessionId: string;
-  readonly role: 'initiator' | 'responder';
-}
-
-/**
- * INTEGRATION POINT (DMY-16): real local socket transport.
- *
- * Intentionally NOT implemented in this issue. A real implementation would open
- * a WebSocket/TCP channel between the two phones on the local network (the
- * baby-unit listening on its mDNS-advertised port, the parent-unit dialling it),
- * framing {@link SignalingMessage}s as JSON. It must satisfy the
- * {@link SignalingTransport} contract so the state machine works unchanged.
- *
- * Until then this throws, making the missing piece explicit rather than faking a
- * connection. Tests and the wiring use {@link createLoopbackTransportPair}.
- */
-/* istanbul ignore next -- integration stub; not exercised by the unit suite. */
-export function createLocalSocketTransport(
-  _config: LocalSocketTransportConfig,
-): SignalingTransport {
-  throw new Error(
-    'webrtc/signaling: real local socket transport is not implemented yet ' +
-      '(DMY-16 integration point). Use createLoopbackTransportPair for tests.',
-  );
-}
+// The real local socket transport lives in socketSignalingTransport.ts (DMY-45)
+// and is re-exported here so the module's public surface is unchanged.
+export {
+  createLocalSocketTransport,
+  buildSignalingUrl,
+  defaultSignalingServerFactory,
+} from './socketSignalingTransport';
+export type {
+  LocalSocketTransportConfig,
+  LocalSocketTransportOptions,
+  SignalingServerFactory,
+  WebSocketFactory,
+  WebSocketLike,
+} from './socketSignalingTransport';
