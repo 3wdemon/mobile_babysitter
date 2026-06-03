@@ -19,6 +19,9 @@ class MainApplication : Application(), ReactApplication {
           // AudioForegroundPackage exposes the background-audio foreground service
           // (DMY-23) as NativeModules.AudioForegroundModule.
           add(AudioForegroundPackage())
+          // SignalingServerPackage exposes the baby-side WebSocket signalling
+          // SERVER (DMY-72) as NativeModules.SignalingServer.
+          add(SignalingServerPackage())
         },
     )
   }

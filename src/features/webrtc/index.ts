@@ -257,6 +257,29 @@ export type {
 export { default as ConnectedParentsList } from './ConnectedParentsList';
 export type { ConnectedParentsListProps } from './ConnectedParentsList';
 
+// --- Native baby-side WebSocket signalling SERVER (DMY-72) --------------------
+// The REAL listen side of the baby-unit: a native WS server (iOS NWListener +
+// RFC 6455 framing; Android org.java-websocket) bridged to JS. It lights up the
+// DMY-45 seams that RN cannot satisfy from JS:
+//   - createNativeBroadcastTransport → the multi-client accept loop injected
+//     into the fan-out (DMY-66) on the baby screen (PRIMARY path);
+//   - createNativeSignalingServerFactory → the 1:1 listen factory for the later
+//     DMY-75 wiring (provided, not injected — only one path binds the port).
+// The shared secret (the ephemeral pairing sessionId from the QR, DMY-6) is
+// validated on every parent's WS upgrade. Absent native module → undefined /
+// throwing factory, so Jest and unlinked builds stay inert. Real two-device
+// accept is a manual milestone; every JS seam is real + unit-tested.
+export {
+  createNativeBroadcastTransport,
+  createNativeSignalingServerFactory,
+  createPerClientTransport,
+  DEFAULT_SIGNALING_PORT,
+} from './signalingServerNative';
+export type {
+  NativeBroadcastTransportOptions,
+  PerClientTransport,
+} from './signalingServerNative';
+
 export type {
   UseVideoStreamOptions,
   UseVideoStreamState,
