@@ -1,20 +1,18 @@
 /**
  * Unit tests for useCryDetection (DMY-49).
  *
- * Uses a controllable stub {@link CrySampleSource} plus a REAL
- * {@link AlertService} with a spy {@link AlertSoundPlayer}, so we assert the hook
- * raises the `'cry'` AlertType THROUGH the service (distinct cry sound played)
- * and that it RESPECTS the service policy — a cry dropped by the service raises
- * no alert and is not surfaced as `lastAlert`. Also covers cleanup on unmount.
+ * Uses a controllable stub {@link CrySampleSource}. The hook is a PURE detector
+ * (mirroring useNoiseDetection/useMotionDetection): it subscribes the source,
+ * feeds the heuristic core, and fires `onCry` ONCE per detected episode — it
+ * never touches the AlertService. The alert layer (sound + notification +
+ * policy) is exercised where cry is routed through `useAlerts` (see the
+ * detection→alerts integration test). Also covers cleanup on unmount.
  *
  * No real audio is involved — the source plugs into the same injected contract a
  * real DSP tap (DMY-18/DMY-9) will.
  */
 import { act, renderHook } from '@testing-library/react-native';
 
-import { createAlertService } from '../../alerts/alertService';
-import { soundIdForType } from '../../alerts/alertSoundMap';
-import type { AlertSoundPlayer } from '../../alerts/alertTypes';
 import { DEFAULT_CRY_CONFIG } from '../cryConfig';
 import { useCryDetection } from '../useCryDetection';
 import { noopCrySampleSource } from '../cryTypes';
@@ -35,13 +33,6 @@ function makeStubSource() {
   return { source, emit, unsubscribe };
 }
 
-function makeSpyPlayer(): AlertSoundPlayer & {
-  playSound: jest.Mock;
-  stop: jest.Mock;
-} {
-  return { playSound: jest.fn(), stop: jest.fn() };
-}
-
 const CONFIG = DEFAULT_CRY_CONFIG;
 
 /** A ~7s sustained, in-band cry: enough samples to cross the 5s rule. */
@@ -54,15 +45,12 @@ function sustainedCry(startMs = 0): CrySample[] {
 }
 
 describe('useCryDetection', () => {
-  it('raises the cry AlertType through the AlertService with its distinct sound', () => {
+  it('fires onCry once per episode (not per sample) and surfaces lastEvent', () => {
     const { source, emit } = makeStubSource();
-    const player = makeSpyPlayer();
-    const alertService = createAlertService({ player, now: () => 1_000 });
     const onCry = jest.fn();
-    const onAlert = jest.fn();
 
     const { result } = renderHook(() =>
-      useCryDetection({ source, config: CONFIG, alertService, onCry, onAlert }),
+      useCryDetection({ source, config: CONFIG, onCry }),
     );
 
     act(() => {
@@ -71,27 +59,17 @@ describe('useCryDetection', () => {
       }
     });
 
+    // One episode -> exactly one onCry, despite ~70 samples flowing through.
     expect(onCry).toHaveBeenCalledTimes(1);
-    expect(onAlert).toHaveBeenCalledTimes(1);
-    expect(onAlert.mock.calls[0][0]).toMatchObject({ type: 'cry' });
-    // Went through the service: the DISTINCT cry sound was played.
-    expect(player.playSound).toHaveBeenCalledWith(
-      soundIdForType('cry'),
-      expect.any(Number),
-    );
+    expect(onCry.mock.calls[0][0]).toMatchObject({ type: 'cry' });
     expect(result.current.lastEvent?.type).toBe('cry');
-    expect(result.current.lastAlert?.type).toBe('cry');
   });
 
   it('does not fire for a short (<5s) burst', () => {
     const { source, emit } = makeStubSource();
-    const player = makeSpyPlayer();
-    const alertService = createAlertService({ player });
     const onCry = jest.fn();
 
-    renderHook(() =>
-      useCryDetection({ source, config: CONFIG, alertService, onCry }),
-    );
+    renderHook(() => useCryDetection({ source, config: CONFIG, onCry }));
 
     act(() => {
       // 2s loud in-band burst, then silence.
@@ -104,18 +82,13 @@ describe('useCryDetection', () => {
     });
 
     expect(onCry).not.toHaveBeenCalled();
-    expect(player.playSound).not.toHaveBeenCalled();
   });
 
   it('does not fire for loud out-of-band noise (white noise)', () => {
     const { source, emit } = makeStubSource();
-    const player = makeSpyPlayer();
-    const alertService = createAlertService({ player });
     const onCry = jest.fn();
 
-    renderHook(() =>
-      useCryDetection({ source, config: CONFIG, alertService, onCry }),
-    );
+    renderHook(() => useCryDetection({ source, config: CONFIG, onCry }));
 
     act(() => {
       for (let i = 0; i < 120; i += 1) {
@@ -124,82 +97,21 @@ describe('useCryDetection', () => {
     });
 
     expect(onCry).not.toHaveBeenCalled();
-    expect(player.playSound).not.toHaveBeenCalled();
   });
 
-  it('RESPECTS service policy: a cry dropped by enablement raises no alert', () => {
+  it('tracks the candidate (cry-shaped) state while an episode builds', () => {
     const { source, emit } = makeStubSource();
-    const player = makeSpyPlayer();
-    // Service disabled -> handle('cry') returns a dropped result.
-    const alertService = createAlertService({
-      player,
-      isEnabled: () => false,
-    });
-    const onCry = jest.fn();
-    const onAlert = jest.fn();
 
     const { result } = renderHook(() =>
-      useCryDetection({ source, config: CONFIG, alertService, onCry, onAlert }),
+      useCryDetection({ source, config: CONFIG }),
     );
 
     act(() => {
-      for (const s of sustainedCry()) {
-        emit(s);
-      }
+      // A single loud in-band sample makes a candidate without crossing 5s.
+      emit({ rms: 0.8, bandEnergyRatio: 0.7, timestamp: 0 });
     });
-
-    // The detector still detected the cry (onCry fired)...
-    expect(onCry).toHaveBeenCalledTimes(1);
-    // ...but the service dropped it: NO sound, NO alert surfaced. Not bypassed.
-    expect(player.playSound).not.toHaveBeenCalled();
-    expect(onAlert).not.toHaveBeenCalled();
-    expect(result.current.lastAlert).toBeNull();
-  });
-
-  it('RESPECTS service policy: a cry within snooze STILL sounds (breaksThroughSnooze)', () => {
-    const { source, emit } = makeStubSource();
-    const player = makeSpyPlayer();
-    const alertService = createAlertService({ player, now: () => 0 });
-    // Snooze: cry is flagged breaksThroughSnooze, so it must still raise.
-    alertService.snooze(60_000);
-    const onAlert = jest.fn();
-
-    renderHook(() =>
-      useCryDetection({ source, config: CONFIG, alertService, onAlert }),
-    );
-
-    act(() => {
-      for (const s of sustainedCry()) {
-        emit(s);
-      }
-    });
-
-    expect(onAlert).toHaveBeenCalledTimes(1);
-    expect(player.playSound).toHaveBeenCalledWith(
-      soundIdForType('cry'),
-      expect.any(Number),
-    );
-  });
-
-  it('runs the detector but raises no alert when no service is injected', () => {
-    const { source, emit } = makeStubSource();
-    const onCry = jest.fn();
-    const onAlert = jest.fn();
-
-    const { result } = renderHook(() =>
-      useCryDetection({ source, config: CONFIG, onCry, onAlert }),
-    );
-
-    act(() => {
-      for (const s of sustainedCry()) {
-        emit(s);
-      }
-    });
-
-    expect(onCry).toHaveBeenCalledTimes(1);
-    expect(onAlert).not.toHaveBeenCalled();
-    expect(result.current.lastEvent?.type).toBe('cry');
-    expect(result.current.lastAlert).toBeNull();
+    expect(result.current.candidate).toBe(true);
+    expect(result.current.lastEvent).toBeNull();
   });
 
   it('does not subscribe when disabled', () => {
@@ -245,10 +157,9 @@ describe('useCryDetection', () => {
     expect(result.current.lastSample).toBeNull();
     expect(result.current.candidate).toBe(false);
     expect(result.current.lastEvent).toBeNull();
-    expect(result.current.lastAlert).toBeNull();
   });
 
-  it('keeps the same session when only callbacks change (no re-subscribe)', () => {
+  it('keeps the same session when only the callback changes (no re-subscribe)', () => {
     const { source, emit, unsubscribe } = makeStubSource();
     const first = jest.fn();
     const second = jest.fn();

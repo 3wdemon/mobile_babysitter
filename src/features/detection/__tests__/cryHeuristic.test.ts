@@ -248,13 +248,6 @@ describe('CryHeuristicDetector', () => {
       }
 
       const fpRate = falsePositives / nonCryFixtures.length;
-      // Surface the measured rate in the test output.
-      console.log(
-        `cry fixtures: ${cryFixtures.length} cry / ${nonCryFixtures.length} non-cry; ` +
-          `true-positives=${truePositives}/${cryFixtures.length}; ` +
-          `false-positives=${falsePositives}/${nonCryFixtures.length}; ` +
-          `FP-rate=${(fpRate * 100).toFixed(1)}%`,
-      );
 
       expect(truePositives).toBe(cryFixtures.length);
       expect(fpRate).toBeLessThan(0.2);

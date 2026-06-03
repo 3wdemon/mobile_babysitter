@@ -1,32 +1,48 @@
 /**
  * useCryDetection — wires a {@link CrySampleSource} into the pure
- * {@link CryHeuristicDetector} core and, on a "probable cry", raises the `'cry'`
- * {@link AlertType} through the parent's {@link AlertService} (DMY-49).
+ * {@link CryHeuristicDetector} core and exposes React-friendly state plus an
+ * `onCry` callback (DMY-49).
  *
  * The source is INJECTED (dependency inversion): in production the baby-unit
  * passes a real audio-feature tap (RMS + 250-2000Hz band-energy from the DSP —
  * DMY-18/DMY-9); tests pass a stub that pushes synthetic samples. The hook knows
  * nothing about microphones or WebRTC.
  *
- * BRIDGE: on each {@link CryEvent} the hook calls `alertService.handle('cry')`
- * rather than playing a sound itself. Going through the service means the cry
- * alert obeys ALL the existing parent-side policy — enablement, the per-type
- * throttle/cooldown, priority, and snooze (cry is flagged `breaksThroughSnooze`,
- * so a genuine cry still sounds even while snoozed) — and plays the distinct
- * `alert-cry` sound (DMY-26). It NEVER bypasses policy: a cry that the service
- * drops (disabled / cooldown / priority) raises no alert and is not surfaced as
- * `lastAlert`. When the ML detector (DMY-21) lands it emits the SAME `'cry'`
- * type through the same bridge, so nothing downstream changes.
+ * PURE DETECTOR (mirrors {@link useNoiseDetection}'s `onNoise` and
+ * {@link useMotionDetection}'s `onMotion`): on each sample it updates the live
+ * `lastSample`/`candidate` state and, when the core emits an event, stores it as
+ * `lastEvent` and invokes `onCry`. It NEVER touches the {@link AlertService}
+ * directly — the alert layer is the parent screen's concern.
+ *
+ * ALERT WIRING: the parent screen adapts this hook's `onCry` into the SAME
+ * {@link AlertEventSource} that {@link useAlerts} consumes, exactly as it adapts
+ * `onNoise`/`onMotion`:
+ *
+ * ```ts
+ * // In the parent screen, alongside the noise/motion adapters:
+ * const cryAlertSource: AlertEventSource = onAlertType => {
+ *   setCryListener(() => () => onAlertType('cry'));
+ *   return () => setCryListener(null);
+ * };
+ * // and useCryDetection({ ..., onCry: () => cryListener?.() });
+ * ```
+ *
+ * Routing through {@link useAlerts} (rather than calling `alertService.handle`
+ * here) is what makes cry obey ALL parent-side policy — enablement, per-type
+ * throttle/cooldown, priority, snooze (cry is flagged `breaksThroughSnooze`) —
+ * AND drives BOTH sinks: the per-type `alert-cry` sound (DMY-26) and the local
+ * notification presenter (DMY-46), which fire in parallel for every RAISED
+ * event in {@link useAlerts}' `handleType`. Calling the service directly here
+ * would drive only the sound and silently skip the notification, so we do not.
+ * When the ML detector (DMY-21) lands it emits the SAME `'cry'` {@link AlertType}
+ * through the same path, so nothing downstream changes.
  *
  * Privacy: only the privacy-safe {@link CryEvent} (features + confidence + time)
- * and the resulting {@link AlertEvent} (type + time + soundId) are ever exposed
- * or logged — never any audio buffer.
+ * is ever exposed or logged — never any audio buffer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { logger } from '../../services/logger';
-import type { AlertEvent } from '../alerts/alertTypes';
-import type { AlertService } from '../alerts/alertService';
 import { createCryHeuristicDetector } from './cryHeuristic';
 import type {
   CryEvent,
@@ -46,25 +62,13 @@ export interface UseCryDetectionOptions {
   /** Heuristic thresholds / duration / re-arm. */
   readonly config: CryHeuristicConfig;
   /**
-   * The parent-unit {@link AlertService} the cry is raised through. INJECTED so
-   * cry shares the SAME service (and therefore the same throttle / priority /
-   * snooze state) as noise/motion alerts. When omitted the hook still runs the
-   * detector and fires `onCry`, but raises no audible alert (useful in tests /
-   * before the alert layer is wired).
-   */
-  readonly alertService?: Pick<AlertService, 'handle'>;
-  /**
-   * Called whenever the heuristic emits a cry event, BEFORE the alert-service
-   * policy is applied. Fires for every detected episode even if the service then
-   * drops the alert (e.g. cooldown), so callers can observe raw detections.
+   * Called once per detected cry episode (not per sample). The parent screen
+   * adapts this into the {@link AlertEventSource} consumed by `useAlerts`,
+   * exactly like `useNoiseDetection`'s `onNoise` / `useMotionDetection`'s
+   * `onMotion` — so cry flows through the same sound + notification + policy
+   * pipeline.
    */
   readonly onCry?: (event: CryEvent) => void;
-  /**
-   * Called whenever the cry actually RAISED an alert (i.e. survived the service
-   * policy). Receives the resulting {@link AlertEvent}. Not called when the
-   * service drops the cry.
-   */
-  readonly onAlert?: (event: AlertEvent) => void;
   /** When `false`, the source is not subscribed. Defaults to `true`. */
   readonly enabled?: boolean;
 }
@@ -77,29 +81,21 @@ export interface CryDetectionState {
   readonly candidate: boolean;
   /** The most recently emitted cry detection event, or `null`. */
   readonly lastEvent: CryEvent | null;
-  /** The most recent cry alert that was actually raised, or `null`. */
-  readonly lastAlert: AlertEvent | null;
 }
 
 export function useCryDetection(
   options: UseCryDetectionOptions,
 ): CryDetectionState {
-  const { source, config, alertService, onCry, onAlert, enabled = true } =
-    options;
+  const { source, config, onCry, enabled = true } = options;
 
   const [lastSample, setLastSample] = useState<CrySample | null>(null);
   const [candidate, setCandidate] = useState(false);
   const [lastEvent, setLastEvent] = useState<CryEvent | null>(null);
-  const [lastAlert, setLastAlert] = useState<AlertEvent | null>(null);
 
-  // Keep the latest callbacks / service in refs so swapping them does not
-  // re-subscribe the source (which could drop samples / reset an episode).
+  // Keep the latest callback in a ref so changing it does not re-subscribe the
+  // source (which could drop samples / reset an episode mid-session).
   const onCryRef = useRef(onCry);
   onCryRef.current = onCry;
-  const onAlertRef = useRef(onAlert);
-  onAlertRef.current = onAlert;
-  const alertServiceRef = useRef(alertService);
-  alertServiceRef.current = alertService;
 
   // Recreate the detector only when the resolved config actually changes.
   const detector = useMemo(
@@ -135,19 +131,6 @@ export function useCryDetection(
       });
       setLastEvent(event);
       onCryRef.current?.(event);
-
-      // BRIDGE: raise through the AlertService so ALL policy (enablement /
-      // throttle / priority / snooze + the distinct cry sound) applies. We do
-      // NOT bypass it: a dropped cry raises nothing and is not surfaced.
-      const service = alertServiceRef.current;
-      if (!service) {
-        return;
-      }
-      const { event: alert } = service.handle('cry');
-      if (alert) {
-        setLastAlert(alert);
-        onAlertRef.current?.(alert);
-      }
     },
     [detector],
   );
@@ -163,5 +146,5 @@ export function useCryDetection(
     };
   }, [enabled, source, detector, handleSample]);
 
-  return { lastSample, candidate, lastEvent, lastAlert };
+  return { lastSample, candidate, lastEvent };
 }
