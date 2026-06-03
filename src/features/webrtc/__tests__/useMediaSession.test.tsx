@@ -554,6 +554,53 @@ describe('useMediaSession', () => {
       expect(native.activate).not.toHaveBeenCalled();
       expect(native.deactivate).not.toHaveBeenCalled();
     });
+
+    it('baby on iOS: NEVER activates the AVAudioSession (baby publishes, it does not play back)', async () => {
+      // The platform default is resolved inside the hook regardless of role, so
+      // a baby device on iOS also constructs the iOS controller. But the baby
+      // PUBLISHES audio and never plays a remote track back, so activate() must
+      // never fire — otherwise the baby would grab a .playAndRecord session and
+      // light the mic indicator for the wrong reason. Constructing the controller
+      // is side-effect-free; only a remote-track attach (parent-only) activates.
+      Platform.OS = 'ios';
+      const native = mockAudioSession();
+      (NativeModules as Record<string, unknown>).AudioSessionModule = native;
+
+      act(() => {
+        useAppStore.getState().setRole('baby');
+        useAppStore.getState().setPaired('sess-ios-baby');
+      });
+      const stream = fakeStream([fakeTrack('audio'), fakeTrack('video')]);
+      const mediaDevices: MediaDevicesLike = {
+        getUserMedia: jest.fn(async () => stream),
+      };
+      const { b } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const { unmount } = renderHook(() =>
+        useMediaSession({
+          transport: b,
+          createPeerConnection: () => pc,
+          mediaDevices,
+        }),
+      );
+      await flush();
+
+      // Even if a track event reaches the baby, onRemoteTrack early-returns for
+      // the baby role, so playback is never started.
+      act(() =>
+        pc.emitTrack({
+          track: fakeTrack('audio'),
+          streams: [fakeStream([fakeTrack('audio')])],
+        }),
+      );
+      await flush();
+      act(() => unmount());
+
+      // The session is NEVER activated on the baby. The harmless idempotent
+      // deactivate() on unmount is acceptable (releasing a session that was
+      // never held is a no-op); the load-bearing guarantee is no activate().
+      expect(native.activate).not.toHaveBeenCalled();
+    });
   });
 
   it('stays inert with no transport (never fabricates a session)', () => {
