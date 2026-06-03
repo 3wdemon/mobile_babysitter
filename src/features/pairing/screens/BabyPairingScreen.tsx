@@ -14,8 +14,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { useTheme } from '../../../hooks/useTheme';
-import { useMediaSession } from '../../webrtc/useMediaSession';
-import { useSignalingTransport } from '../../webrtc/useSignalingTransport';
 import { usePublishService } from '../discovery/useDiscovery';
 import { usePairingSession } from '../usePairingSession';
 
@@ -32,16 +30,16 @@ function BabyPairingScreen() {
   // when "New code" mints a fresh session; withdraws on unmount.
   const { publishing } = usePublishService({ sessionId: payload.sessionId });
 
-  // DMY-45: the baby is the signalling RESPONDER — it must LISTEN for the
-  // parent's dial. React Native has no JS WebSocket server, so the listen
-  // transport is the native seam (SignalingServerFactory); the shipped default
-  // throws → no transport → the media session stays inert until the native
-  // listener lands (the remaining device milestone). Wiring it here means the
-  // baby publishes audio+video over a SINGLE peer connection the instant the
-  // listener exists — no further screen changes needed. The session auto-starts
-  // from the paired state in useSignaling (driven by the live peer events).
-  const transport = useSignalingTransport();
-  useMediaSession({ transport });
+  // Publishing the baby's audio+video is NOT done here. DMY-45 originally wired a
+  // 1:1 useMediaSession responder onto this screen, but DMY-66 introduced the
+  // fan-out manager (one baby → up to MAX_PARENTS parents over ONE shared
+  // capture). With the native listener now live (DMY-72), keeping BOTH paths
+  // would open the camera+mic TWICE on the baby (two getUserMedia racing for the
+  // camera). DMY-75 unifies the baby publish path: the fan-out manager
+  // (useBabyBroadcast, mounted by BabyScreen) is the SOLE publisher — it subsumes
+  // the 1:1 case (a single connected parent is just N=1). This screen is now a
+  // pure pairing view (QR + LAN advertisement). The parent side still uses the
+  // 1:1 useMediaSession as the dial INITIATOR — that path is untouched.
 
   return (
     <View
