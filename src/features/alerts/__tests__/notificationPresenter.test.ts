@@ -13,7 +13,9 @@
  * cannot leak here.
  */
 import { t } from '../../../services/i18n';
-import type { AlertEvent, AlertType } from '../alertTypes';
+import { createAlertService } from '../alertService';
+import type { AlertEvent, AlertType, AlertSoundPlayer } from '../alertTypes';
+import type { AlertNotificationPresenter } from '../notificationPresenter';
 import {
   ALERT_CHANNEL_ID,
   createPresenterFromNotifee,
@@ -159,6 +161,70 @@ describe('createPresenterFromNotifee — present()', () => {
       .cancelAllNotifications;
     const presenter = createPresenterFromNotifee(notifee);
     await expect(presenter.cancelAll?.()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * AC seam: the presenter is invoked ONLY for a RAISED event (a non-null
+ * `service.handle(...).event`) and NEVER for a dropped one. `useAlerts` enforces
+ * this with a single `if (event) presenter.present(event)` branch; the
+ * "throttled / priority / disabled" cases of that branch are exercised in the
+ * useAlerts suite. This block closes the one remaining AC-named drop reason —
+ * `'snoozed'` (DMY-28) — at the service<->presenter boundary, mirroring exactly
+ * how the hook consumes the seam, and re-confirms a snooze-breakthrough cry
+ * still notifies.
+ */
+describe('presenter is driven ONLY by raised events (service policy)', () => {
+  function makeSpyPlayer(): AlertSoundPlayer & { playSound: jest.Mock } {
+    return { playSound: jest.fn(), stop: jest.fn() };
+  }
+  function makeSpyPresenter(): AlertNotificationPresenter & {
+    present: jest.Mock;
+  } {
+    return { present: jest.fn() };
+  }
+  /** The exact rule useAlerts applies: present iff the service raised an event. */
+  function presentIfRaised(
+    result: { event: AlertEvent | null },
+    presenter: AlertNotificationPresenter,
+  ): void {
+    if (result.event) {
+      presenter.present(result.event);
+    }
+  }
+
+  it('does NOT present a SNOOZED non-cry drop', () => {
+    let clock = 1_000;
+    const service = createAlertService({
+      player: makeSpyPlayer(),
+      now: () => clock,
+    });
+    const presenter = makeSpyPresenter();
+
+    service.snooze(60_000);
+    presentIfRaised(service.handle('noise'), presenter); // dropped: snoozed
+
+    expect(presenter.present).not.toHaveBeenCalled();
+
+    // After the snooze elapses, the same type DOES notify exactly once.
+    clock += 60_000;
+    presentIfRaised(service.handle('noise'), presenter);
+    expect(presenter.present).toHaveBeenCalledTimes(1);
+    expect(presenter.present.mock.calls[0][0]).toMatchObject({ type: 'noise' });
+  });
+
+  it('STILL presents a cry that breaks through a snooze', () => {
+    const service = createAlertService({
+      player: makeSpyPlayer(),
+      now: () => 2_000,
+    });
+    const presenter = makeSpyPresenter();
+
+    service.snooze(60_000);
+    presentIfRaised(service.handle('cry'), presenter); // breaks through
+
+    expect(presenter.present).toHaveBeenCalledTimes(1);
+    expect(presenter.present.mock.calls[0][0]).toMatchObject({ type: 'cry' });
   });
 });
 
