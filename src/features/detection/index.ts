@@ -7,6 +7,8 @@
  *  - Noise-threshold detection (DMY-8): abstract loudness levels -> NoiseEvent.
  *  - Motion / no-motion detection (DMY-25): abstract per-frame motion metrics ->
  *    MotionEvent (`motion` rising edge, `no_motion` after >30s stillness).
+ *  - Heuristic cry detection (DMY-49): RMS + 250-2000Hz band-energy features ->
+ *    CryEvent after >5s sustained in-band loudness (no-ML stop-gap for DMY-21).
  */
 export { NoiseDetector, createNoiseDetector } from './noiseDetector';
 export { useNoiseDetection } from './useNoiseDetection';
@@ -40,3 +42,28 @@ export type {
   MotionMetricSource,
   MotionSampleResult,
 } from './motionTypes';
+
+export {
+  CryHeuristicDetector,
+  createCryHeuristicDetector,
+} from './cryHeuristic';
+export { useCryDetection } from './useCryDetection';
+export {
+  DEFAULT_CRY_CONFIG,
+  CRY_MIN_DURATION_MS,
+  CRY_REARM_CLEAR_MS,
+  CRY_BAND_LOW_HZ,
+  CRY_BAND_HIGH_HZ,
+} from './cryConfig';
+export { noopCrySampleSource } from './cryTypes';
+export type {
+  CryDetectionState,
+  UseCryDetectionOptions,
+} from './useCryDetection';
+export type {
+  CryEvent,
+  CryHeuristicConfig,
+  CrySample,
+  CrySampleResult,
+  CrySampleSource,
+} from './cryTypes';
