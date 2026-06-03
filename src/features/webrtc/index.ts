@@ -262,9 +262,10 @@ export type { ConnectedParentsListProps } from './ConnectedParentsList';
 // RFC 6455 framing; Android org.java-websocket) bridged to JS. It lights up the
 // DMY-45 seams that RN cannot satisfy from JS:
 //   - createNativeBroadcastTransport → the multi-client accept loop injected
-//     into the fan-out (DMY-66) on the baby screen (PRIMARY path);
-//   - createNativeSignalingServerFactory → the 1:1 listen factory for the later
-//     DMY-75 wiring (provided, not injected — only one path binds the port).
+//     into the fan-out (DMY-66) on the baby screen (the SOLE baby publish path
+//     after DMY-75 unified 1:1 into the fan-out — N=1 is just one parent);
+//   - createNativeSignalingServerFactory → the 1:1 listen factory; a tested seam,
+//     NOT wired into the baby screen (only the broadcast loop binds the port).
 // The shared secret (the ephemeral pairing sessionId from the QR, DMY-6) is
 // validated on every parent's WS upgrade. Absent native module → undefined /
 // throwing factory, so Jest and unlinked builds stay inert. Real two-device

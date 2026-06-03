@@ -15,10 +15,12 @@
  *    is the PRIMARY path wired into the baby screen (multi-parent broadcast), per
  *    DMY-72's instruction to inject into the fan-out path.
  *  - {@link createNativeSignalingServerFactory} → the 1:1 factory (one accepted
- *    parent surfaced as a single {@link SignalingTransport}), provided so the
- *    older 1:1 path (DMY-45 `useMediaSession`) can be lit up by a LATER task
- *    (DMY-75) without re-deriving the framing. It is NOT injected here to avoid a
- *    second listener competing for the port — only ONE path binds.
+ *    parent surfaced as a single {@link SignalingTransport}). It is NOT wired into
+ *    the baby screen: DMY-75 unified the baby publish path onto the fan-out
+ *    manager (the 1:1 case is just N=1 there), so only the broadcast accept loop
+ *    binds the port — never two listeners competing for it. The factory remains a
+ *    tested seam (it reuses the same native listener framing) should a dedicated
+ *    1:1 baby flavour ever be needed.
  *
  * ## How a parent maps to a per-client transport
  * The native listener accepts a parent dial, validates the shared secret
