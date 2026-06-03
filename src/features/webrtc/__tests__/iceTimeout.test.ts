@@ -167,6 +167,87 @@ describe('createIceTimeout (DMY-47)', () => {
     expect(onTimeout).toHaveBeenCalledTimes(1);
   });
 
+  it('connected JUST before the deadline cancels the armed timer (no false guidance at the boundary)', () => {
+    // The race the AC cares about: `connected` arrives while the window timer is
+    // still pending. It must disarm so the (now-cleared) timer firing is a no-op.
+    const sched = createFakeScheduler();
+    const onTimeout = jest.fn();
+    const ice = createIceTimeout({
+      onTimeout,
+      setTimer: sched.setTimer,
+      clearTimer: sched.clearTimer,
+    });
+
+    ice.onState('connecting');
+    expect(ice.isArmed()).toBe(true);
+    expect(sched.pendingCount()).toBe(1);
+
+    // connected wins the race at the boundary — pending callback must be removed.
+    ice.onState('connected');
+    expect(ice.isArmed()).toBe(false);
+    expect(sched.pendingCount()).toBe(0);
+
+    // Firing whatever the scheduler has does nothing: guidance never shows.
+    sched.fireAll();
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
+  it('churn connecting→hang→disconnected→connecting→hang fires once PER window (no double-fire)', () => {
+    // A full reconnect churn: each `connecting` window that genuinely hangs is
+    // entitled to exactly ONE fire; a fresh `connecting` re-arms its own window.
+    // Across two hangs we expect two distinct fires (not a double-fire of one).
+    const sched = createFakeScheduler();
+    const onTimeout = jest.fn();
+    const ice = createIceTimeout({
+      onTimeout,
+      setTimer: sched.setTimer,
+      clearTimer: sched.clearTimer,
+    });
+
+    // First window hangs → one fire.
+    ice.onState('connecting');
+    expect(sched.pendingCount()).toBe(1);
+    sched.fireAll();
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+    expect(ice.isArmed()).toBe(false);
+
+    // Link churns: a terminal-ish transition then a reconnect attempt.
+    ice.onState('disconnected');
+    expect(ice.isArmed()).toBe(false);
+
+    // Second window hangs → a second, independent fire (total 2, never doubled).
+    ice.onState('connecting');
+    expect(sched.pendingCount()).toBe(1);
+    sched.fireAll();
+    expect(onTimeout).toHaveBeenCalledTimes(2);
+    expect(ice.isArmed()).toBe(false);
+  });
+
+  it('a reconnect that SUCCEEDS after an earlier hang does not fire a second time', () => {
+    // First window hangs (guidance), then the reconnect reaches `connected`
+    // before its own deadline: the second window must be cancelled, not fired.
+    const sched = createFakeScheduler();
+    const onTimeout = jest.fn();
+    const ice = createIceTimeout({
+      onTimeout,
+      setTimer: sched.setTimer,
+      clearTimer: sched.clearTimer,
+    });
+
+    ice.onState('connecting');
+    sched.fireAll(); // first hang → guidance
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+
+    ice.onState('disconnected');
+    ice.onState('connecting'); // reconnect → fresh window armed
+    expect(ice.isArmed()).toBe(true);
+    ice.onState('connected'); // recovers in time → cancel
+    expect(ice.isArmed()).toBe(false);
+
+    sched.fireAll();
+    expect(onTimeout).toHaveBeenCalledTimes(1); // still just the first hang
+  });
+
   it('cancel() disarms and allows a later connecting to re-arm', () => {
     const sched = createFakeScheduler();
     const onTimeout = jest.fn();

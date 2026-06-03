@@ -291,6 +291,76 @@ describe('useSignaling', () => {
       expect(() => act(() => sched.fire())).not.toThrow();
     });
 
+    it('re-arms a fresh window on churn and clears guidance once connected arrives', async () => {
+      // A reconnect churn at the hook level: a first hang shows guidance; the
+      // session then churns (disconnected → connecting) which must re-arm a fresh
+      // window; reaching `connected` clears the earlier guidance. Verifies the
+      // hook drives the controller across the full real status sequence.
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-churn');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      await flush();
+      expect(sched.armed()).toBe(true);
+
+      // First window hangs → guidance shown.
+      act(() => sched.fire());
+      expect(result.current.iceTimedOut).toBe(true);
+
+      // Churn: disconnected then connecting re-arms a fresh window.
+      act(() => pc.emitState('disconnected'));
+      act(() => pc.emitState('connecting'));
+      expect(sched.armed()).toBe(true);
+
+      // The reconnect succeeds in time → guidance cleared, no re-fire.
+      act(() => pc.emitState('connected'));
+      expect(result.current.status).toBe('connected');
+      expect(result.current.iceTimedOut).toBe(false);
+      expect(result.current.guidanceMessage).toBeNull();
+      act(() => sched.fire());
+      expect(result.current.iceTimedOut).toBe(false);
+    });
+
+    it('does not show guidance when the fire races AFTER stop (no setState past teardown)', async () => {
+      // stop() cancels the pending timer; even a stray fire afterward must not
+      // re-surface guidance on a torn-down session.
+      act(() => {
+        useAppStore.getState().setRole('parent');
+        useAppStore.getState().setPaired('sess-ice-stopfire');
+      });
+      const { a } = createLoopbackTransportPair();
+      const pc = new MockPeerConnection();
+      const sched = fakeScheduler();
+      const { result } = renderHook(() =>
+        useSignaling({
+          transport: a,
+          createPeerConnection: () => pc,
+          autoStart: false,
+          iceTimer: { setTimer: sched.setTimer, clearTimer: sched.clearTimer },
+        }),
+      );
+      act(() => result.current.start());
+      await flush();
+      expect(sched.armed()).toBe(true);
+
+      act(() => result.current.stop());
+      expect(sched.armed()).toBe(false);
+      // A stray fire after stop must be inert.
+      expect(() => act(() => sched.fire())).not.toThrow();
+      expect(result.current.iceTimedOut).toBe(false);
+      expect(result.current.guidanceMessage).toBeNull();
+    });
+
     it('clears guidance and timer when stopped', async () => {
       act(() => {
         useAppStore.getState().setRole('parent');
