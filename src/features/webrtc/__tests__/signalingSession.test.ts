@@ -37,6 +37,7 @@ class MockPeerConnection implements PeerConnection {
     icecandidate: new Set(),
     connectionstatechange: new Set(),
     track: new Set(),
+    datachannel: new Set(),
   };
 
   // Track what was created, to assert ordering.
@@ -62,6 +63,7 @@ class MockPeerConnection implements PeerConnection {
 
   addAudioTrack = jest.fn();
   addVideoTrack = jest.fn(() => null);
+  createDataChannel = jest.fn(() => null);
 
   on<K extends keyof PeerConnectionEvents>(
     event: K,

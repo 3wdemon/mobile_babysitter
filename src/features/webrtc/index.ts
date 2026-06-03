@@ -31,6 +31,7 @@ export type { ParentMediaMode, VideoTrackController } from './types';
 export {
   createPeerConnection,
   normalizePeerState,
+  wrapDataChannel,
   DEFAULT_ICE_SERVERS,
 } from './peerConnection';
 export {
@@ -181,5 +182,11 @@ export type {
   PeerConnectionFactory,
   PeerConnectionConfig,
   RtcIceServer,
+  DataChannel,
 } from './signalingTypes';
+export type {
+  RtcDataChannelLike,
+  RtcPeerConnectionLike,
+  RtcPeerConnectionCtor,
+} from './peerConnection';
 export type { LocalSocketTransportConfig } from './signalingTransport';
