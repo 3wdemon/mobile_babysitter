@@ -372,4 +372,83 @@ describe('DMY-77 cry → alert source → datachannel → parent receiver (end-t
 
     broadcast.stop();
   });
+
+  it('a cry after a parent leaves reaches only the remaining parents (torn-down channel detaches, no stale delivery)', async () => {
+    // Real night scenario: one parent closes the app mid-session while the baby
+    // keeps detecting. removeParent → session.stop() must run the alert-channel
+    // cleanup (the pushAlertsToChannel unsubscribe), so a LATER cry must not be
+    // pushed to the gone parent's torn-down receiver — but must still fan out to
+    // every parent that is still connected. Exercised through the live seams.
+    const { source: crySource, emit } = makeStubCrySource();
+    const presentCounts: number[] = [0, 0];
+
+    const { result: alertSource } = renderHook(() =>
+      useCryAlertSource({ source: crySource }),
+    );
+
+    let parentIndex = 0;
+    const broadcast = createBabyBroadcast({
+      sessionId: SID,
+      transport: makeMultiClientTransport(),
+      mediaDevices: makeMediaDevices(),
+      createPeerConnection: () => {
+        const idx = parentIndex;
+        return makeBabyPc(parentChannel => {
+          receiveAlertsFromChannel(parentChannel, {
+            presenter: {
+              present: () => {
+                presentCounts[idx] += 1;
+              },
+            },
+          });
+        });
+      },
+      alertSource: alertSource.current,
+    });
+    await act(async () => {
+      await broadcast.start();
+    });
+    await act(async () => {
+      const { a: p1 } = createLoopbackTransportPair();
+      parentIndex = 0;
+      await broadcast.addParent('p1', p1);
+      const { a: p2 } = createLoopbackTransportPair();
+      parentIndex = 1;
+      await broadcast.addParent('p2', p2);
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+    });
+
+    // First cry while BOTH are connected: each parent notified once.
+    act(() => {
+      for (const s of sustainedCry()) {
+        emit(s);
+      }
+    });
+    await flush();
+    expect(presentCounts).toEqual([1, 1]);
+
+    // Parent p1 leaves the session (app closed / hung up).
+    await act(async () => {
+      broadcast.removeParent('p1');
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+    });
+
+    // Clear the condition for >rearmClearMs (1.5s) so the detector re-arms, then
+    // a SECOND, distinct cry episode fires.
+    act(() => {
+      for (let i = 0; i < 25; i++) {
+        emit({ rms: 0.0, bandEnergyRatio: 0.0, timestamp: 7_000 + i * 100 });
+      }
+      for (const s of sustainedCry(60_000)) {
+        emit(s);
+      }
+    });
+    await flush();
+
+    // The gone parent (p1) got NO new notification (its channel was torn down);
+    // the remaining parent (p2) was notified for the second cry too.
+    expect(presentCounts).toEqual([1, 2]);
+
+    broadcast.stop();
+  });
 });
