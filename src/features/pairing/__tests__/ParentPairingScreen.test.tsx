@@ -132,6 +132,29 @@ describe('ParentPairingScreen', () => {
     expect(useAppStore.getState().pairedSessionId).toBe(sessionId);
   });
 
+  it('mounts the push-to-talk button in the paired state, disabled until the link is up (DMY-76)', async () => {
+    const { qr } = freshQr();
+    render(<ParentPairingScreen />);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('camera-permission-action'));
+    });
+
+    act(() => {
+      __emitScan(qr);
+    });
+
+    // The talk control is mounted on the paired screen…
+    const talk = screen.getByTestId('talk-button');
+    expect(talk).toBeTruthy();
+    // …and inert until the media session actually connects (no resolved endpoint
+    // in the test → the session is inert → talk capture not ready), surfacing the
+    // honest "available once the connection is up" hint rather than a live mic.
+    expect(talk.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(
+      screen.getByText(/available once the connection is up/i),
+    ).toBeTruthy();
+  });
+
   it('shows an invalid-code error and does not pair on a foreign QR', async () => {
     render(<ParentPairingScreen />);
     await act(async () => {

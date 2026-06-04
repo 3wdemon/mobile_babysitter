@@ -603,6 +603,208 @@ describe('useMediaSession', () => {
     });
   });
 
+  // --- Two-way talk wired into the live session (DMY-76) -------------------
+  //
+  // The live parent screen uses THIS hook, not useAudioStream — so push-to-talk
+  // must work here. With enableTalkback the parent (initiator) captures its own
+  // mic (echo-cancelled) and publishes a DISABLED talk track onto the SAME peer
+  // connection; startTalking enables it, stopTalking disables it, and teardown
+  // releases the mic. `talking`/`talkReady` are driven by the REAL track, never
+  // fabricated.
+  it('parent: enableTalkback captures the mic and publishes a DISABLED talk track on the live pc (DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk1');
+    });
+    const talkTrack = fakeTrack('audio');
+    const talkStream = fakeStream([talkTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => talkStream),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    // The parent mic was captured with echo-cancelling constraints and the talk
+    // track was published onto the SAME peer connection (parent→baby m-line).
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    const constraints = (mediaDevices.getUserMedia as jest.Mock).mock
+      .calls[0][0];
+    expect(constraints.audio).toMatchObject({ echoCancellation: true });
+    expect(pc.addAudioTrack).toHaveBeenCalledWith(talkTrack, talkStream);
+    // Default-off (push-to-talk): the published track is DISABLED until held.
+    expect(talkTrack.enabled).toBe(false);
+    expect(result.current.talkbackEnabled).toBe(true);
+    expect(result.current.talkReady).toBe(true);
+    expect(result.current.talking).toBe(false);
+  });
+
+  it('parent: startTalking enables the talk track, stopTalking disables it (push-to-talk, DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk2');
+    });
+    const talkTrack = fakeTrack('audio');
+    const talkStream = fakeStream([talkTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => talkStream),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    // Hold the talk button: the real outgoing track goes live.
+    act(() => result.current.startTalking());
+    expect(talkTrack.enabled).toBe(true);
+    expect(result.current.talking).toBe(true);
+
+    // Release: silence is sent again (half-duplex).
+    act(() => result.current.stopTalking());
+    expect(talkTrack.enabled).toBe(false);
+    expect(result.current.talking).toBe(false);
+  });
+
+  it('parent: a press→release→press cycle reuses the SAME live track without stopping it (half-duplex re-talk, DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk2b');
+    });
+    const talkTrack = fakeTrack('audio');
+    const talkStream = fakeStream([talkTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => talkStream),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    // First hold/release.
+    act(() => result.current.startTalking());
+    expect(talkTrack.enabled).toBe(true);
+    act(() => result.current.stopTalking());
+    expect(talkTrack.enabled).toBe(false);
+
+    // Critical half-duplex guarantee: the mic is only DISABLED between talks,
+    // never stop()ed — so the SRTP m-line stays alive and the next press is
+    // instant. A second hold must re-enable the very same track.
+    expect(talkTrack.stop).not.toHaveBeenCalled();
+    act(() => result.current.startTalking());
+    expect(talkTrack.enabled).toBe(true);
+    expect(result.current.talking).toBe(true);
+    // The capture was acquired exactly once across both talks (no re-getUserMedia).
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.stopTalking());
+    expect(talkTrack.enabled).toBe(false);
+  });
+
+  it('parent: releases the talk mic on unmount (no capture leak, DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk3');
+    });
+    const talkTrack = fakeTrack('audio');
+    const talkStream = fakeStream([talkTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => talkStream),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { unmount } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    act(() => unmount());
+    expect(talkTrack.stop).toHaveBeenCalled();
+  });
+
+  it('parent: WITHOUT enableTalkback the parent publishes nothing and the talk controls are inert (DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk4');
+    });
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => fakeStream([fakeTrack('audio')])),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+      }),
+    );
+    await flush();
+
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(pc.addAudioTrack).not.toHaveBeenCalled();
+    expect(result.current.talkbackEnabled).toBe(false);
+    expect(result.current.talkReady).toBe(false);
+    // Controls are safe no-ops (no controller acquired) — never fabricate.
+    act(() => result.current.startTalking());
+    expect(result.current.talking).toBe(false);
+  });
+
+  it('baby: enableTalkback is ignored (the baby captures via the broadcast fan-out, DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('baby');
+      useAppStore.getState().setPaired('sess-talk5');
+    });
+    const audioTrack = fakeTrack('audio');
+    const videoTrack = fakeTrack('video');
+    const stream = fakeStream([audioTrack, videoTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => stream),
+    };
+    const { b } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: b,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    // The baby path publishes its OWN capture (audio+video), not a talk track,
+    // and never reports talkReady.
+    expect(pc.addVideoTrack).toHaveBeenCalledTimes(1);
+    expect(result.current.talkReady).toBe(false);
+  });
+
   it('stays inert with no transport (never fabricates a session)', () => {
     act(() => {
       useAppStore.getState().setRole('parent');

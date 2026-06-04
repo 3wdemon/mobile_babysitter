@@ -35,16 +35,18 @@
  * from one baby is a manual device milestone; every seam used to do it is real.
  */
 import { logger } from '../../services/logger';
-import { stopStream } from './audioStream';
+import { extractRemoteAudioStream, stopStream } from './audioStream';
 import {
   getLocalVideoStream,
   setVideoBitrate,
   videoTracksOf,
   VIDEO_QUALITY_LADDER,
 } from './videoStream';
+import { createSafeAudioPlayback } from './audioPlayback';
 import { createSignalingSession, SignalingSession } from './signalingSession';
 import { pushAlertsToChannel } from '../alerts/alertChannel';
 import type { AlertChannelSource } from '../alerts/alertChannel';
+import type { AudioPlayback } from './audioPlayback';
 import type { SignalingSessionStatus } from './signalingSession';
 import type { LocalVideoCapture } from './videoStream';
 import type { MediaDevicesLike, RtpSenderLike } from './mediaTypes';
@@ -161,6 +163,17 @@ export interface BabyBroadcastOptions {
    * independently and is detached cleanly when that peer leaves (no leak).
    */
   readonly alertSource?: AlertChannelSource;
+  /**
+   * Two-way talk playback (parent→baby, DMY-76). When set, a remote AUDIO track
+   * arriving on a parent's peer connection (the parent's push-to-talk voice) is
+   * handed to this {@link AudioPlayback} controller so the parent's voice comes
+   * out of the BABY-unit's speaker. Each parent's incoming talk is played
+   * independently. Omit to wrap a SAFE no-op (react-native-webrtc still renders a
+   * live remote track on the default output in a real build); tests inject a
+   * fake. The baby never mutes the incoming talk — the parent already gates it
+   * via half-duplex push-to-talk.
+   */
+  readonly talkbackPlayback?: AudioPlayback;
 }
 
 /** Public surface of the fan-out manager. */
@@ -215,7 +228,14 @@ export function createBabyBroadcast(
     maxParents = MAX_PARENTS,
     onParentsChange,
     alertSource,
+    talkbackPlayback,
   } = options;
+
+  // Two-way talk playback (DMY-76): one safe-wrapped controller shared across
+  // parents. A parent's incoming talk audio is started on it; it is stopped when
+  // the last parent leaves / the manager stops so the talk audio session does
+  // not linger. With no controller injected this is the shared safe no-op.
+  const talkPlayback = createSafeAudioPlayback(talkbackPlayback);
 
   const peers = new Map<string, PeerEntry>();
   /** The single shared capture, lazily acquired on the first parent. */
@@ -269,6 +289,9 @@ export function createBabyBroadcast(
       capture = null;
     }
     capturePromise = null;
+    // No parents remain: stop any parent talk playback so the talk audio session
+    // does not linger after the last parent leaves (DMY-76).
+    talkPlayback.stop();
   }
 
   /** Publish the SHARED capture's tracks into one peer connection. */
@@ -364,6 +387,18 @@ export function createBabyBroadcast(
           return;
         }
         await publishInto(entry, pc);
+      },
+      // Two-way talk (DMY-76): a remote AUDIO track on a parent's peer connection
+      // is that parent's push-to-talk voice — play it out of the baby speaker.
+      // Video tracks never arrive on the baby (the parent publishes none); a
+      // stray non-audio track is ignored. Never muted: the parent already gates
+      // the audio via half-duplex push-to-talk.
+      onRemoteTrack: (event: unknown) => {
+        const stream = extractRemoteAudioStream(event as never);
+        if (!stream) {
+          return;
+        }
+        talkPlayback.start(stream);
       },
       // Per-parent alert channel (DMY-71): the responder session opens the alert
       // channel; feed it from the shared source so a single detection fans out a
