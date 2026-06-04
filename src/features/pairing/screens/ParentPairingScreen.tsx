@@ -37,6 +37,7 @@ import { useTranslation } from '../../../hooks/useTranslation';
 import { logger } from '../../../services/logger';
 import { useAppStore } from '../../../store/useAppStore';
 import ParentMediaView from '../../webrtc/ParentMediaView';
+import TalkButton from '../../webrtc/TalkButton';
 import { useMediaSession } from '../../webrtc/useMediaSession';
 import { useSignalingTransport } from '../../webrtc/useSignalingTransport';
 import { usePermissions } from '../../onboarding/usePermissions';
@@ -106,7 +107,11 @@ function ParentPairingScreen() {
   // the end-to-end media session. Auto-starts from the paired state inside
   // useSignaling; with no transport the session is inert.
   const transport = useSignalingTransport({ endpoint });
-  const media = useMediaSession({ transport });
+  // DMY-76: enable two-way talk so the parent captures its own mic (echo-
+  // cancelled) and publishes a push-to-talk track onto the SAME live peer
+  // connection. The TalkButton below drives startTalking/stopTalking; the track
+  // stays silent until the button is held (half-duplex).
+  const media = useMediaSession({ transport, enableTalkback: true });
 
   const onSelectDiscovered = useCallback(
     (sessionId: string) => {
@@ -302,6 +307,22 @@ function ParentPairingScreen() {
            * `ontrack` arrives — ParentMediaView shows the honest placeholder.
            */}
           <ParentMediaView remoteStreamUrl={media.remoteStreamUrl} />
+        </View>
+
+        {/*
+         * DMY-76: push-to-talk control. Disabled (visibly dimmed, inert) until
+         * the talk capture is acquired on the live peer connection (`talkReady`);
+         * holding it opens the parent mic toward the baby (startTalking) and
+         * releasing closes it (stopTalking). Half-duplex + native echo
+         * cancellation keep the baby-unit feedback-free.
+         */}
+        <View style={mediaViewStyle}>
+          <TalkButton
+            talking={media.talking}
+            onStartTalking={media.startTalking}
+            onStopTalking={media.stopTalking}
+            disabled={!media.talkReady}
+          />
         </View>
 
         <TouchableOpacity

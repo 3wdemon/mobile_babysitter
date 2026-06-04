@@ -46,6 +46,8 @@ import {
 } from './audioStream';
 import { createSafeAudioPlayback } from './audioPlayback';
 import { createIosAudioPlayback } from './iosAudioPlayback';
+import { createTalkbackController, getTalkbackAudioStream } from './talkback';
+import type { TalkbackController } from './talkback';
 import { createGetStatsBandwidthSource } from './bandwidthSource';
 import type { RtcStatsReportLike } from './bandwidthSource';
 import {
@@ -130,6 +132,18 @@ export interface UseMediaSessionOptions
   readonly bandwidth?: BandwidthSignalSource;
   /** Whether the baby starts transmitting video. Defaults to `true`. */
   readonly videoEnabled?: boolean;
+  /**
+   * Enable two-way talk (parent→baby push-to-talk, DMY-20/76). When set, the
+   * PARENT (initiator) — which otherwise publishes nothing on this hook — also
+   * captures its OWN microphone (with native echo cancellation,
+   * {@link TALK_AUDIO_CONSTRAINTS}) and publishes a DISABLED push-to-talk track
+   * onto the SAME peer connection that carries the baby's audio+video, so the
+   * parent→baby audio m-line is part of the initial negotiation. The track stays
+   * silent until {@link UseMediaSessionState.startTalking} is held (half-duplex).
+   * Ignored on the baby-unit (which captures via the broadcast fan-out instead).
+   * Defaults to `false` (receive-only parent).
+   */
+  readonly enableTalkback?: boolean;
 }
 
 /** Value returned by {@link useMediaSession}. */
@@ -150,6 +164,35 @@ export interface UseMediaSessionState extends UseSignalingState {
   readonly videoController: VideoTrackController | null;
   /** The negotiated media security profile (DTLS-SRTP), or `null`. */
   readonly mediaEncrypted: MediaEncryptionProfile | null;
+  /**
+   * Two-way talk (DMY-76). Whether talkback was enabled for this session (the
+   * `enableTalkback` option). When false, `talking` stays false and the talk
+   * controls are no-ops.
+   */
+  readonly talkbackEnabled: boolean;
+  /**
+   * Parent-unit: whether the push-to-talk capture has been acquired and a track
+   * published, so the talk button can leave its disabled state. True ONLY after
+   * a real capture — never fabricated; always false on the baby-unit.
+   */
+  readonly talkReady: boolean;
+  /**
+   * Parent-unit: whether the parent is CURRENTLY talking (push-to-talk held —
+   * the outgoing talk track is enabled / transmitting). Driven by the real
+   * track's enabled flag via the controller, never fabricated.
+   */
+  readonly talking: boolean;
+  /**
+   * Parent-unit: begin transmitting the parent's voice to the baby (call on
+   * press-in of the talk button). No-op until the talk capture is ready, on the
+   * baby-unit, or when talkback is disabled.
+   */
+  readonly startTalking: () => void;
+  /**
+   * Parent-unit: stop transmitting (call on press-out of the talk button).
+   * No-op when not talking / talkback disabled.
+   */
+  readonly stopTalking: () => void;
 }
 
 export function useMediaSession(
@@ -162,6 +205,7 @@ export function useMediaSession(
     initiallyMuted = false,
     bandwidth,
     videoEnabled = true,
+    enableTalkback = false,
     alertReceiver,
     alertSource,
     ...signalingOptions
@@ -193,11 +237,18 @@ export function useMediaSession(
   const [mediaEncrypted, setMediaEncrypted] =
     useState<MediaEncryptionProfile | null>(null);
   const [qualityIndex, setQualityIndex] = useState(0);
+  // Two-way talk (DMY-76): the parent push-to-talk live state.
+  const [talkReady, setTalkReady] = useState(false);
+  const [talking, setTalking] = useState(false);
 
   // Baby-unit live refs (read by cleanup / signals without re-rendering).
   const localStreamRef = useRef<MediaStreamLike | null>(null);
   const peerRef = useRef<PeerConnection | null>(null);
   const senderRef = useRef<RtpSenderLike | null>(null);
+  // Parent push-to-talk controller (DMY-76) — null until the talk capture is
+  // acquired. Held in a ref so press-in/press-out + cleanup reach the real track
+  // without re-rendering.
+  const talkbackRef = useRef<TalkbackController | null>(null);
 
   // Stable refs for inputs read inside identity-stable signalling callbacks.
   const roleRef = useRef(role);
@@ -206,6 +257,8 @@ export function useMediaSession(
   mediaDevicesRef.current = mediaDevices;
   const videoEnabledRef = useRef(videoEnabled);
   videoEnabledRef.current = videoEnabled;
+  const enableTalkbackRef = useRef(enableTalkback);
+  enableTalkbackRef.current = enableTalkback;
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const qualityIndexRef = useRef(qualityIndex);
@@ -239,7 +292,29 @@ export function useMediaSession(
   const onPeerConnection = useCallback(async (pc: PeerConnection) => {
     peerRef.current = pc;
     if (roleRef.current !== 'baby') {
-      // The parent publishes nothing on this hook (talkback is a separate path).
+      // parent-unit: receive-only by default. With two-way talk enabled
+      // (DMY-76) the parent ALSO captures its OWN mic (echo-cancelled) and
+      // publishes a DISABLED push-to-talk track onto THIS — the very same — peer
+      // connection that carries the baby's audio+video, so the parent→baby audio
+      // m-line is part of the initial negotiation. The track stays silent until
+      // the parent holds the talk button (half-duplex push-to-talk).
+      if (!enableTalkbackRef.current) {
+        return;
+      }
+      const talkStream = await getTalkbackAudioStream(
+        mediaDevicesRef.current ?? null,
+      );
+      const controller = createTalkbackController(talkStream, next =>
+        setTalking(next),
+      );
+      talkbackRef.current = controller;
+      for (const track of talkStream.getTracks()) {
+        if (track.kind === 'audio') {
+          // Already disabled by the controller; added so the m-line negotiates.
+          pc.addAudioTrack(track, talkStream);
+        }
+      }
+      setTalkReady(true);
       return;
     }
     const capture = await getLocalVideoStream(mediaDevicesRef.current ?? null);
@@ -338,6 +413,17 @@ export function useMediaSession(
     playbackRef.current.setMuted(next);
   }, []);
 
+  // Push-to-talk (DMY-76): enable/disable the parent's outgoing talk track. Both
+  // are no-ops until the talk capture is ready (controller acquired) — they
+  // NEVER fabricate a talking state; `talking` is driven by the real track flag
+  // via the controller's onTalkingChange callback.
+  const startTalking = useCallback(() => {
+    talkbackRef.current?.startTalking();
+  }, []);
+  const stopTalking = useCallback(() => {
+    talkbackRef.current?.stopTalking();
+  }, []);
+
   // --- Adaptive bitrate (baby) ---------------------------------------------
   useEffect(() => {
     const sender = senderRef.current;
@@ -396,6 +482,13 @@ export function useMediaSession(
       stopStream(localStreamRef.current); // releases camera + mic
       localStreamRef.current = null;
     }
+    if (talkbackRef.current) {
+      // Release the parent talk mic (stops the track) — no capture leak.
+      talkbackRef.current.dispose();
+      talkbackRef.current = null;
+      setTalking(false);
+      setTalkReady(false);
+    }
     senderRef.current = null;
     peerRef.current = null;
     setVideoController(null);
@@ -418,6 +511,9 @@ export function useMediaSession(
     return () => {
       stopStream(localStreamRef.current);
       localStreamRef.current = null;
+      // Release the parent talk mic on a mid-session unmount (no capture leak).
+      talkbackRef.current?.dispose();
+      talkbackRef.current = null;
       senderRef.current = null;
       peerRef.current = null;
       playbackRef.current.stop();
@@ -437,5 +533,10 @@ export function useMediaSession(
     setMuted,
     videoController,
     mediaEncrypted,
+    talkbackEnabled: enableTalkback,
+    talkReady,
+    talking,
+    startTalking,
+    stopTalking,
   };
 }

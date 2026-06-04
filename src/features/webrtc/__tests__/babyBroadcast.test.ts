@@ -23,6 +23,7 @@ import {
 } from '../../alerts/alertChannel';
 import type { AlertChannelSource } from '../../alerts/alertChannel';
 import type { AlertEvent } from '../../alerts/alertTypes';
+import type { AudioPlayback } from '../audioPlayback';
 import type { DataChannel } from '../signalingTypes';
 import type {
   MediaDevicesLike,
@@ -115,6 +116,12 @@ class MockPeerConnection implements PeerConnection {
     this.state = state;
     for (const h of this.handlers.connectionstatechange) {
       h(state);
+    }
+  }
+
+  emitTrack(event: unknown): void {
+    for (const h of this.handlers.track) {
+      h(event);
     }
   }
 }
@@ -659,5 +666,143 @@ describe('createBabyBroadcast — alert datachannel fan-out (DMY-71)', () => {
     for (const pc of pcs) {
       expect(pc.alertChannel.sent).toHaveLength(0);
     }
+  });
+});
+
+// --- Two-way talk: parent→baby push-to-talk played on the baby (DMY-76) -------
+//
+// The parent (useMediaSession with enableTalkback) publishes a push-to-talk
+// audio track onto its peer connection. On the baby, each parent's responder
+// session must route that incoming remote AUDIO track to the talkback playback
+// so the parent's voice comes out of the baby speaker — never fabricated, only on
+// a real `ontrack`.
+describe('createBabyBroadcast — two-way talk playback (DMY-76)', () => {
+  function fakePlayback(): AudioPlayback & {
+    start: jest.Mock;
+    stop: jest.Mock;
+  } {
+    return {
+      start: jest.fn(),
+      stop: jest.fn(),
+      setMuted: jest.fn(),
+      setRoute: jest.fn(),
+      getAvailableRoutes: jest.fn(() => ['speaker' as const]),
+      setVolume: jest.fn(),
+    } as unknown as AudioPlayback & { start: jest.Mock; stop: jest.Mock };
+  }
+
+  /** A remote parent-talk audio stream + its `ontrack` event. */
+  function remoteTalkEvent() {
+    const track: MediaStreamTrackLike = {
+      kind: 'audio',
+      enabled: true,
+      stop: jest.fn(),
+    };
+    const stream: MediaStreamLike = {
+      getTracks: () => [track],
+      getAudioTracks: () => [track],
+      getVideoTracks: () => [],
+    };
+    return { track, stream, event: { track, streams: [stream] } };
+  }
+
+  it("plays a parent's incoming talk audio out of the baby speaker", async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const playback = fakePlayback();
+    const pcs: MockPeerConnection[] = [];
+    const broadcast = makeMultiClientTransport();
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      talkbackPlayback: playback,
+      createPeerConnection: () => {
+        const pc = new MockPeerConnection();
+        pcs.push(pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    const { a } = createLoopbackTransportPair();
+    await manager.addParent('p1', a);
+    await flush();
+
+    expect(playback.start).not.toHaveBeenCalled();
+
+    // The parent holds talk → a remote audio track arrives on this peer.
+    const talk = remoteTalkEvent();
+    pcs[0].emitTrack(talk.event);
+
+    expect(playback.start).toHaveBeenCalledTimes(1);
+    expect(playback.start).toHaveBeenCalledWith(talk.stream);
+
+    manager.stop();
+    // The talk session is stopped once the last parent (and capture) is gone.
+    expect(playback.stop).toHaveBeenCalled();
+  });
+
+  it('ignores a non-audio remote track (never fabricates playback)', async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const playback = fakePlayback();
+    const pcs: MockPeerConnection[] = [];
+    const broadcast = makeMultiClientTransport();
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      talkbackPlayback: playback,
+      createPeerConnection: () => {
+        const pc = new MockPeerConnection();
+        pcs.push(pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    const { a } = createLoopbackTransportPair();
+    await manager.addParent('p1', a);
+    await flush();
+
+    const videoTrack: MediaStreamTrackLike = {
+      kind: 'video',
+      enabled: true,
+      stop: jest.fn(),
+    };
+    pcs[0].emitTrack({ track: videoTrack, streams: [] });
+
+    expect(playback.start).not.toHaveBeenCalled();
+    manager.stop();
+  });
+
+  it('plays each parent’s talk independently (per-peer ontrack)', async () => {
+    const cap = makeCapture();
+    const { mediaDevices } = makeMediaDevices(cap.stream);
+    const playback = fakePlayback();
+    const pcs: MockPeerConnection[] = [];
+    const broadcast = makeMultiClientTransport();
+    const manager = createBabyBroadcast({
+      sessionId: SID,
+      transport: broadcast.transport,
+      mediaDevices,
+      talkbackPlayback: playback,
+      createPeerConnection: () => {
+        const pc = new MockPeerConnection();
+        pcs.push(pc);
+        return pc;
+      },
+    });
+    await manager.start();
+    for (const id of ['p1', 'p2']) {
+      const { a } = createLoopbackTransportPair();
+      await manager.addParent(id, a);
+    }
+    await flush();
+
+    pcs[0].emitTrack(remoteTalkEvent().event);
+    pcs[1].emitTrack(remoteTalkEvent().event);
+
+    expect(playback.start).toHaveBeenCalledTimes(2);
+    manager.stop();
   });
 });

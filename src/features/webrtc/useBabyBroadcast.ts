@@ -24,6 +24,7 @@ import {
   type BroadcastParent,
   type MultiClientSignalingTransport,
 } from './babyBroadcast';
+import type { AudioPlayback } from './audioPlayback';
 import type { MediaDevicesLike } from './mediaTypes';
 import type {
   PeerConnectionConfig,
@@ -45,6 +46,13 @@ export interface UseBabyBroadcastOptions {
   readonly peerConfig?: PeerConnectionConfig;
   /** Override the parent cap (mainly for tests). */
   readonly maxParents?: number;
+  /**
+   * Two-way talk playback (parent→baby, DMY-76). Forwarded to the manager so a
+   * parent's incoming push-to-talk audio is played out of the baby speaker. Omit
+   * for the safe no-op (react-native-webrtc still renders a live remote track on
+   * the default output in a real build); tests inject a fake.
+   */
+  readonly talkbackPlayback?: AudioPlayback;
 }
 
 /** Value returned by {@link useBabyBroadcast}. */
@@ -74,6 +82,7 @@ export function useBabyBroadcast(
     createPeerConnection,
     peerConfig,
     maxParents = MAX_PARENTS,
+    talkbackPlayback,
   } = options;
 
   const pairedSessionId = useAppStore(s => s.pairedSessionId);
@@ -96,6 +105,8 @@ export function useBabyBroadcast(
   peerConfigRef.current = peerConfig;
   const maxParentsRef = useRef(maxParents);
   maxParentsRef.current = maxParents;
+  const talkbackPlaybackRef = useRef(talkbackPlayback);
+  talkbackPlaybackRef.current = talkbackPlayback;
 
   const sync = useCallback((next: readonly BroadcastParent[]) => {
     if (!mountedRef.current) {
@@ -126,6 +137,9 @@ export function useBabyBroadcast(
         ? { createPeerConnection: createPcRef.current }
         : {}),
       ...(peerConfigRef.current ? { peerConfig: peerConfigRef.current } : {}),
+      ...(talkbackPlaybackRef.current
+        ? { talkbackPlayback: talkbackPlaybackRef.current }
+        : {}),
       maxParents: maxParentsRef.current,
       onParentsChange: sync,
     });
