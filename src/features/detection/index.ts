@@ -48,6 +48,8 @@ export {
   createCryHeuristicDetector,
 } from './cryHeuristic';
 export { useCryDetection } from './useCryDetection';
+export { useCryAlertSource } from './useCryAlertSource';
+export type { UseCryAlertSourceOptions } from './useCryAlertSource';
 export {
   DEFAULT_CRY_CONFIG,
   CRY_MIN_DURATION_MS,

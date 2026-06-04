@@ -25,6 +25,8 @@ import ConnectedParentsList from '../features/webrtc/ConnectedParentsList';
 import { useBabyBroadcast } from '../features/webrtc/useBabyBroadcast';
 import type { MultiClientSignalingTransport } from '../features/webrtc/babyBroadcast';
 import { createNativeBroadcastTransport } from '../features/webrtc/signalingServerNative';
+import { useCryAlertSource } from '../features/detection/useCryAlertSource';
+import type { CrySampleSource } from '../features/detection/cryTypes';
 import type { RootStackScreenProps } from '../navigation/types';
 import { useAppStore } from '../store/useAppStore';
 
@@ -38,9 +40,16 @@ import { useAppStore } from '../store/useAppStore';
 export interface BabyScreenProps extends RootStackScreenProps<'Baby'> {
   /** The multi-client broadcast accept loop (DMY-72 seam). Omit to stay inert. */
   readonly broadcastTransport?: MultiClientSignalingTransport;
+  /**
+   * Cry-feature source (DMY-77 seam). The on-device DSP tap (RMS + 250-2000Hz
+   * band energy — DMY-18/DMY-9) is INJECTED here: production passes the real
+   * audio-feature tap once it exists; with none the detector stays inert and no
+   * cry is ever fabricated. Tests inject a stub that pushes synthetic samples.
+   */
+  readonly crySource?: CrySampleSource;
 }
 
-function BabyScreen({ broadcastTransport }: BabyScreenProps) {
+function BabyScreen({ broadcastTransport, crySource }: BabyScreenProps) {
   // Night/AOD palette for the baby-unit face (matches the indicator).
   const theme = useTheme('dark');
 
@@ -68,8 +77,21 @@ function BabyScreen({ broadcastTransport }: BabyScreenProps) {
     [broadcastTransport, pairedSessionId],
   );
 
+  // Part (в)/(б) of DMY-77: mount on-device cry detection (DMY-49) and expose it
+  // as the baby-unit AlertChannelSource. Threaded into the fan-out so a cry
+  // raised once pushes over EVERY connected parent's alert data channel (DMY-71),
+  // firing each parent's local notification (DMY-46) + haptic (DMY-28). Inert
+  // until the real cry-feature DSP tap (DMY-18/DMY-9) is injected — no cry is
+  // ever fabricated. Only cry is mounted for DMY-77; motion/noise are a follow-up
+  // (their on-device metric taps are equally pending).
+  const alertSource = useCryAlertSource(
+    crySource ? { source: crySource } : {},
+  );
+
   const { parents, maxParents, capReached } = useBabyBroadcast(
-    nativeTransport ? { transport: nativeTransport } : {},
+    nativeTransport
+      ? { transport: nativeTransport, alertSource }
+      : { alertSource },
   );
 
   return (

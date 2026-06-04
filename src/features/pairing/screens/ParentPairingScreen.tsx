@@ -40,6 +40,9 @@ import ParentMediaView from '../../webrtc/ParentMediaView';
 import TalkButton from '../../webrtc/TalkButton';
 import { useMediaSession } from '../../webrtc/useMediaSession';
 import { useSignalingTransport } from '../../webrtc/useSignalingTransport';
+import { createNotifeePresenter } from '../../alerts/notificationPresenter';
+import { vibrationHaptic } from '../../alerts/hapticFeedback';
+import type { AlertChannelReceiverOptions } from '../../alerts/alertChannel';
 import { usePermissions } from '../../onboarding/usePermissions';
 import DiscoveredUnitsList from '../discovery/DiscoveredUnitsList';
 import { useDiscoveredUnits } from '../discovery/useDiscovery';
@@ -107,11 +110,27 @@ function ParentPairingScreen() {
   // the end-to-end media session. Auto-starts from the paired state inside
   // useSignaling; with no transport the session is inert.
   const transport = useSignalingTransport({ endpoint });
+  // Part (а) of DMY-77: the parent-unit alert receiver. The baby opens the alert
+  // data channel (DMY-71) and pushes every raised AlertEvent over it; on receipt
+  // useMediaSession drives BOTH sinks — a local notification (notifee, DMY-46)
+  // and a confirmation vibration (DMY-28) — so a cry on the baby surfaces on the
+  // parent IN-SESSION without any push backend. The notifee presenter degrades to
+  // a safe no-op when the native module is absent (Jest / unlinked build); the
+  // haptic degrades to a no-op on a device with no vibrator. Memoised so it does
+  // not re-subscribe the channel on every render.
+  const alertReceiver = useMemo<AlertChannelReceiverOptions>(
+    () => ({ presenter: createNotifeePresenter(), haptic: vibrationHaptic }),
+    [],
+  );
   // DMY-76: enable two-way talk so the parent captures its own mic (echo-
   // cancelled) and publishes a push-to-talk track onto the SAME live peer
   // connection. The TalkButton below drives startTalking/stopTalking; the track
   // stays silent until the button is held (half-duplex).
-  const media = useMediaSession({ transport, enableTalkback: true });
+  const media = useMediaSession({
+    transport,
+    enableTalkback: true,
+    alertReceiver,
+  });
 
   const onSelectDiscovered = useCallback(
     (sessionId: string) => {
