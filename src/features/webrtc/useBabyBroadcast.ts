@@ -25,6 +25,7 @@ import {
   type MultiClientSignalingTransport,
 } from './babyBroadcast';
 import type { AudioPlayback } from './audioPlayback';
+import type { AlertChannelSource } from '../alerts/alertChannel';
 import type { MediaDevicesLike } from './mediaTypes';
 import type {
   PeerConnectionConfig,
@@ -53,6 +54,14 @@ export interface UseBabyBroadcastOptions {
    * the default output in a real build); tests inject a fake.
    */
   readonly talkbackPlayback?: AudioPlayback;
+  /**
+   * Baby-unit alert source (DMY-71/77). Forwarded to the manager so EACH parent's
+   * per-peer alert data channel (DMY-50) is fed every raised {@link AlertEvent}
+   * from this source — one detection (e.g. a cry, DMY-49) fans out a notification
+   * to all connected parents in-session. Omit to open the channels without
+   * pushing yet; the baby screen passes {@link useCryAlertSource}.
+   */
+  readonly alertSource?: AlertChannelSource;
 }
 
 /** Value returned by {@link useBabyBroadcast}. */
@@ -83,6 +92,7 @@ export function useBabyBroadcast(
     peerConfig,
     maxParents = MAX_PARENTS,
     talkbackPlayback,
+    alertSource,
   } = options;
 
   const pairedSessionId = useAppStore(s => s.pairedSessionId);
@@ -107,6 +117,8 @@ export function useBabyBroadcast(
   maxParentsRef.current = maxParents;
   const talkbackPlaybackRef = useRef(talkbackPlayback);
   talkbackPlaybackRef.current = talkbackPlayback;
+  const alertSourceRef = useRef(alertSource);
+  alertSourceRef.current = alertSource;
 
   const sync = useCallback((next: readonly BroadcastParent[]) => {
     if (!mountedRef.current) {
@@ -139,6 +151,9 @@ export function useBabyBroadcast(
       ...(peerConfigRef.current ? { peerConfig: peerConfigRef.current } : {}),
       ...(talkbackPlaybackRef.current
         ? { talkbackPlayback: talkbackPlaybackRef.current }
+        : {}),
+      ...(alertSourceRef.current
+        ? { alertSource: alertSourceRef.current }
         : {}),
       maxParents: maxParentsRef.current,
       onParentsChange: sync,
