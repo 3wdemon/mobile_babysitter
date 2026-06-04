@@ -680,6 +680,48 @@ describe('useMediaSession', () => {
     expect(result.current.talking).toBe(false);
   });
 
+  it('parent: a press→release→press cycle reuses the SAME live track without stopping it (half-duplex re-talk, DMY-76)', async () => {
+    act(() => {
+      useAppStore.getState().setRole('parent');
+      useAppStore.getState().setPaired('sess-talk2b');
+    });
+    const talkTrack = fakeTrack('audio');
+    const talkStream = fakeStream([talkTrack]);
+    const mediaDevices: MediaDevicesLike = {
+      getUserMedia: jest.fn(async () => talkStream),
+    };
+    const { a } = createLoopbackTransportPair();
+    const pc = new MockPeerConnection();
+    const { result } = renderHook(() =>
+      useMediaSession({
+        transport: a,
+        createPeerConnection: () => pc,
+        mediaDevices,
+        enableTalkback: true,
+      }),
+    );
+    await flush();
+
+    // First hold/release.
+    act(() => result.current.startTalking());
+    expect(talkTrack.enabled).toBe(true);
+    act(() => result.current.stopTalking());
+    expect(talkTrack.enabled).toBe(false);
+
+    // Critical half-duplex guarantee: the mic is only DISABLED between talks,
+    // never stop()ed — so the SRTP m-line stays alive and the next press is
+    // instant. A second hold must re-enable the very same track.
+    expect(talkTrack.stop).not.toHaveBeenCalled();
+    act(() => result.current.startTalking());
+    expect(talkTrack.enabled).toBe(true);
+    expect(result.current.talking).toBe(true);
+    // The capture was acquired exactly once across both talks (no re-getUserMedia).
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.stopTalking());
+    expect(talkTrack.enabled).toBe(false);
+  });
+
   it('parent: releases the talk mic on unmount (no capture leak, DMY-76)', async () => {
     act(() => {
       useAppStore.getState().setRole('parent');
